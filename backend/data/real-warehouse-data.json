@@ -1,0 +1,518 @@
+{
+  "items": [
+    {
+      "kod_kala": "K001",
+      "naam_kala": "استاد CW 75*3000",
+      "goh": "کناف",
+      "zirgoh": "استاد",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K002",
+      "naam_kala": "استاد CW 100*3000",
+      "goh": "کناف",
+      "zirgoh": "استاد",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K003",
+      "naam_kala": "استاد C 70*3500",
+      "goh": "کناف",
+      "zirgoh": "استاد",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K004",
+      "naam_kala": "رانر UW 70*4000",
+      "goh": "کناف",
+      "zirgoh": "رانر",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K005",
+      "naam_kala": "رانر UW 75*4000",
+      "goh": "کناف",
+      "zirgoh": "رانر",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K006",
+      "naam_kala": "رانر UW 100*4000",
+      "goh": "کناف",
+      "zirgoh": "رانر",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K007",
+      "naam_kala": "پنل گچی 84 برگی MR_AK_H2",
+      "goh": "کناف",
+      "zirgoh": "پنل",
+      "vahed": "برگ",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K008",
+      "naam_kala": "پنل گچی 92 برگی RGPRO_AK",
+      "goh": "کناف",
+      "zirgoh": "پنل",
+      "vahed": "برگ",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K009",
+      "naam_kala": "پنل گچی 100 برگی جی برد",
+      "goh": "کناف",
+      "zirgoh": "پنل",
+      "vahed": "برگ",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "K010",
+      "naam_kala": "پیچ پنل 25 میلی TN25",
+      "goh": "کناف",
+      "zirgoh": "پیچ پنل",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 44,
+      "total_receipts": 17,
+      "total_issues": 17,
+      "status": ""
+    },
+    {
+      "kod_kala": "K011",
+      "naam_kala": "پیچ پنل 35 میلی TN35",
+      "goh": "کناف",
+      "zirgoh": "پیچ پنل",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 37,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "K012",
+      "naam_kala": "پیچ سازه 3.5*9.5 VASSA",
+      "goh": "کناف",
+      "zirgoh": "پیچ سازه",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 9,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "K013",
+      "naam_kala": "پیچ سرمته 3.5*9.5 SSB",
+      "goh": "کناف",
+      "zirgoh": "پیچ سرمته",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 15,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "K014",
+      "naam_kala": "پیچ سرمته 3.5*9.5 LB",
+      "goh": "کناف",
+      "zirgoh": "پیچ سرمته",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 4,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "K015",
+      "naam_kala": "پیچ سرمته 3.5*25 TB",
+      "goh": "کناف",
+      "zirgoh": "پیچ سرمته",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 3,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "K016",
+      "naam_kala": "پیچ سرمته 3.5*45 TB",
+      "goh": "کناف",
+      "zirgoh": "پیچ سرمته",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 3,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "K017",
+      "naam_kala": "میخ و چاشنی",
+      "goh": "کناف",
+      "zirgoh": "میخ و چاشنی",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 36,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "T001",
+      "naam_kala": "صفحه استیل بر بزرگ",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "صفحه برش",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 15,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "T002",
+      "naam_kala": "صفحه ساب بزرگ",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "صفحه ساب",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 1,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "T003",
+      "naam_kala": "مته 4 شیار کوتاه نمره 10",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 2,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "T004",
+      "naam_kala": "مته 4 شیار بلند نمره 10",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "مته",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 2,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "T005",
+      "naam_kala": "دستکش کارگری روکشدار",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "لوازم حفاظت فردی",
+      "vahed": "جفت",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 10,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "T006",
+      "naam_kala": "الکترود 3/2 میکا",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "ملزومات جوشکاری",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 6,
+      "mojoodi_fael": 5,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "کم"
+    },
+    {
+      "kod_kala": "C001",
+      "naam_kala": "ضد زنگ سناتور",
+      "goh": "رنگ و نقاشی",
+      "zirgoh": "ضد زنگ",
+      "vahed": "لیتر",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "C002",
+      "naam_kala": "تینر",
+      "goh": "رنگ و نقاشی",
+      "zirgoh": "تینر و حلال",
+      "vahed": "لیتر",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 2,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "S001",
+      "naam_kala": "قوطی 40*80",
+      "goh": "مصالح ساختمانی",
+      "zirgoh": "مقاطع فولادی",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 0,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": "تمام شده"
+    },
+    {
+      "kod_kala": "S002",
+      "naam_kala": "میخ 6 سانتی",
+      "goh": "مصالح ساختمانی",
+      "zirgoh": "میخ و متعلقات",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 3,
+      "total_receipts": 0,
+      "total_issues": 0,
+      "status": ""
+    },
+    {
+      "kod_kala": "K018",
+      "naam_kala": "استاد C 100*3500",
+      "goh": "کناف",
+      "zirgoh": "استاد",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "mojoodi_fael": 1050,
+      "total_receipts": 1050,
+      "total_issues": 0,
+      "status": ""
+    }
+  ],
+  "receipts": [
+    {
+      "receipt_num": "R-050617-173",
+      "tarikh": "1405/06/17",
+      "radif": "1",
+      "kala_id": "K018",
+      "naam_kala": "استاد C 100*3500",
+      "maqdar": 300,
+      "vahed": "شاخه",
+      "tavazihat": "برگ خروج انبار 3539 (1050 متر طول)"
+    },
+    {
+      "receipt_num": "R-050617-173",
+      "tarikh": "1405/06/17",
+      "radif": "2",
+      "kala_id": "K018",
+      "naam_kala": "استاد C 100*3500",
+      "maqdar": 750,
+      "vahed": "شاخه",
+      "tavazihat": "برگ خروج انبار 3540 (2625 متر طول)"
+    },
+    {
+      "receipt_num": "R-050617-174",
+      "tarikh": "1405/06/18",
+      "radif": "3",
+      "kala_id": "K010",
+      "naam_kala": "پیچ پنل 25 میلی TN25",
+      "maqdar": 10,
+      "vahed": "بسته",
+      "tavazihat": "تستی"
+    },
+    {
+      "receipt_num": "R-050617-176",
+      "tarikh": "1405/06/20",
+      "radif": "4",
+      "kala_id": "K010",
+      "naam_kala": "پیچ پنل 25 میلی TN25",
+      "maqdar": 7,
+      "vahed": "بسته",
+      "tavazihat": "آزمایشی"
+    },
+    {
+      "receipt_num": "R-050617-177",
+      "tarikh": "1405/06/21",
+      "radif": "",
+      "maqdar": 0,
+      "vahed": "",
+      "tavazihat": "R-050617-178"
+    }
+  ],
+  "issues": [
+    {
+      "issue_num": "H-050617-1",
+      "tarikh": "1405/06/17",
+      "radif": "1",
+      "kala_id": "K010",
+      "naam_kala": "پیچ پنل 25 میلی TN25",
+      "maqdar": 2,
+      "vahed": "بسته",
+      "tahvil_gir": "قهرمانی",
+      "mahl_masraf": "طبقه اول",
+      "tavazihat": "خروج آزمایشی"
+    },
+    {
+      "issue_num": "H-050617-2",
+      "tarikh": "1405/06/18",
+      "radif": "2",
+      "kala_id": "K010",
+      "naam_kala": "پیچ پنل 25 میلی TN25",
+      "maqdar": 3,
+      "vahed": "بسته",
+      "tahvil_gir": "تیم قهرمانی",
+      "mahl_masraf": "طبقه اول",
+      "tavazihat": "آزمایشی"
+    },
+    {
+      "issue_num": "H-050617-3",
+      "tarikh": "1405/06/19",
+      "radif": "3",
+      "kala_id": "K010",
+      "naam_kala": "پیچ پنل 25 میلی TN25",
+      "maqdar": 12,
+      "vahed": "بسته",
+      "tahvil_gir": "تیم قهرمانی",
+      "mahl_masraf": "طبقه اول",
+      "tavazihat": "آزمایشی"
+    }
+  ],
+  "baseline": [
+    {
+      "kala_id": "K001",
+      "naam_kala": "استاد CW 75*3000",
+      "vahed": "شاخه",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K002"
+    },
+    {
+      "kala_id": "K011",
+      "naam_kala": "پیچ پنل 35 میلی TN35",
+      "vahed": "بسته",
+      "mabna_qty": 37,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 1000 عدد"
+    },
+    {
+      "kala_id": "K012",
+      "naam_kala": "پیچ سازه 3.5*9.5 VASSA",
+      "vahed": "بسته",
+      "mabna_qty": 9,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 1000 عدد"
+    },
+    {
+      "kala_id": "K013",
+      "naam_kala": "پیچ سرمته 3.5*9.5 SSB",
+      "vahed": "بسته",
+      "mabna_qty": 15,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 1000 عدد"
+    },
+    {
+      "kala_id": "K014",
+      "naam_kala": "پیچ سرمته 3.5*9.5 LB",
+      "vahed": "بسته",
+      "mabna_qty": 4,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 1000 عدد"
+    },
+    {
+      "kala_id": "K015",
+      "naam_kala": "پیچ سرمته 3.5*25 TB",
+      "vahed": "بسته",
+      "mabna_qty": 3,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 1000 عدد"
+    },
+    {
+      "kala_id": "K016",
+      "naam_kala": "پیچ سرمته 3.5*45 TB",
+      "vahed": "بسته",
+      "mabna_qty": 3,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 1000 عدد"
+    },
+    {
+      "kala_id": "K017",
+      "naam_kala": "میخ و چاشنی",
+      "vahed": "بسته",
+      "mabna_qty": 36,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 100 عدد"
+    },
+    {
+      "kala_id": "T001",
+      "naam_kala": "صفحه استیل بر بزرگ",
+      "vahed": "عدد",
+      "mabna_qty": 15,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "T002"
+    },
+    {
+      "kala_id": "C001",
+      "naam_kala": "ضد زنگ سناتور",
+      "vahed": "لیتر",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "C002"
+    }
+  ],
+  "metadata": {
+    "extracted_at": "2026-09-19T13:36:41.130Z",
+    "source_file": "سیستم انبار.xlsx",
+    "total_items": 28,
+    "total_receipts": 5,
+    "total_issues": 3,
+    "total_baseline": 10
+  }
+}
