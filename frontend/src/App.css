@@ -1,0 +1,47 @@
+.app-container {
+  display: flex;
+  width: 100%;
+  height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.content-area {
+  flex: 1;
+  overflow-y: auto;
+  padding: 32px;
+}
+
+.placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 18px;
+}
+
+/* Scrollbar styling */
+.content-area::-webkit-scrollbar {
+  width: 8px;
+}
+
+.content-area::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+.content-area::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.content-area::-webkit-scrollbar-thumb:hover {
+  background: var(--text-secondary);
+}

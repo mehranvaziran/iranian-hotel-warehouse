@@ -1,0 +1,63 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --accent: #E45826;
+  --accent-light: #f0764d;
+  --accent-dark: #c94318;
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #242424;
+  --text-primary: #f5f5f5;
+  --text-secondary: #b0b0b0;
+  --border: #333333;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+}
+
+html, body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif, 'IranSans', 'Vazir';
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  font-size: inherit;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+input, select {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: inherit;
+}
+
+input:focus, select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(228, 88, 38, 0.1);
+}
