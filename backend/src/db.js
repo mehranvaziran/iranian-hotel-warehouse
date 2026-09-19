@@ -2,9 +2,12 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { mkdirSync } from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '..', '..', 'data', 'warehouse.db');
+const dbDir = path.join(__dirname, '..', '..', 'data');
+mkdirSync(dbDir, { recursive: true });
+const dbPath = path.join(dbDir, 'warehouse.db');
 
 export async function initDatabase() {
   const db = await open({
