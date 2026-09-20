@@ -115,8 +115,8 @@
       "zirgoh": "پیچ پنل",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 44,
-      "total_receipts": 17,
+      "mojoodi_fael": 27,
+      "total_receipts": 0,
       "total_issues": 17,
       "status": ""
     },
@@ -357,34 +357,6 @@
       "maqdar": 750,
       "vahed": "شاخه",
       "tavazihat": "برگ خروج انبار 3540 (2625 متر طول)"
-    },
-    {
-      "receipt_num": "R-050617-174",
-      "tarikh": "1405/06/18",
-      "radif": "3",
-      "kala_id": "K010",
-      "naam_kala": "پیچ پنل 25 میلی TN25",
-      "maqdar": 10,
-      "vahed": "بسته",
-      "tavazihat": "تستی"
-    },
-    {
-      "receipt_num": "R-050617-176",
-      "tarikh": "1405/06/20",
-      "radif": "4",
-      "kala_id": "K010",
-      "naam_kala": "پیچ پنل 25 میلی TN25",
-      "maqdar": 7,
-      "vahed": "بسته",
-      "tavazihat": "آزمایشی"
-    },
-    {
-      "receipt_num": "R-050617-177",
-      "tarikh": "1405/06/21",
-      "radif": "",
-      "maqdar": 0,
-      "vahed": "",
-      "tavazihat": "R-050617-178"
     }
   ],
   "issues": [
@@ -508,10 +480,10 @@
     }
   ],
   "metadata": {
-    "extracted_at": "2026-09-19T13:36:41.130Z",
+    "extracted_at": "2026-09-20T07:02:54.037Z",
     "source_file": "سیستم انبار.xlsx",
     "total_items": 28,
-    "total_receipts": 5,
+    "total_receipts": 2,
     "total_issues": 3,
     "total_baseline": 10
   }

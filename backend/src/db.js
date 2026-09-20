@@ -7,11 +7,11 @@ import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbDir = path.join(__dirname, '..', '..', 'data');
-mkdirSync(dbDir, { recursive: true });
 const dbPath = path.join(dbDir, 'warehouse.db');
 
 export async function initDatabase() {
-  // Use a timestamped database or check for real data requirements
+  mkdirSync(dbDir, { recursive: true });
+
   const db = await open({
     filename: dbPath,
     driver: sqlite3.Database,
@@ -40,19 +40,20 @@ export async function initDatabase() {
 
     CREATE TABLE IF NOT EXISTS vorood (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      receipt_num TEXT UNIQUE NOT NULL,
+      receipt_num TEXT NOT NULL,
       tarikh DATE,
       radif INTEGER,
       kala_id TEXT,
       naam_kala TEXT,
       maqdar REAL,
       vahed TEXT,
-      tavazihat TEXT
+      tavazihat TEXT,
+      UNIQUE(receipt_num, radif)
     );
 
     CREATE TABLE IF NOT EXISTS khorooj (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      issue_num TEXT UNIQUE NOT NULL,
+      issue_num TEXT NOT NULL,
       tarikh DATE,
       radif INTEGER,
       kala_id TEXT,
@@ -61,7 +62,8 @@ export async function initDatabase() {
       vahed TEXT,
       tahvil_gir TEXT,
       mahl_masraf TEXT,
-      tavazihat TEXT
+      tavazihat TEXT,
+      UNIQUE(issue_num, radif)
     );
 
     CREATE TABLE IF NOT EXISTS mojoodi_mabna (
