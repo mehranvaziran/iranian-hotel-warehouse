@@ -68,7 +68,7 @@ app.get('/api/dashboard/recent-receipts', async (req, res) => {
     const receipts = await db.all(
       `SELECT r.id, r.receipt_num, r.tarikh, k.naam_kala, r.maqdar, r.vahed
        FROM vorood r
-       LEFT JOIN kala k ON r.kala_id = k.id
+       LEFT JOIN kala k ON r.kala_id = k.kod_kala
        ORDER BY r.id DESC
        LIMIT 5`
     );
@@ -90,7 +90,7 @@ app.get('/api/dashboard/recent-issues', async (req, res) => {
     const issues = await db.all(
       `SELECT i.id, i.issue_num, i.tarikh, k.naam_kala, i.maqdar, i.vahed, i.tahvil_gir
        FROM khorooj i
-       LEFT JOIN kala k ON i.kala_id = k.id
+       LEFT JOIN kala k ON i.kala_id = k.kod_kala
        ORDER BY i.id DESC
        LIMIT 5`
     );
@@ -134,11 +134,11 @@ app.get('/api/dashboard/activity', async (req, res) => {
     const activities = await db.all(
       `SELECT 'receipt' as type, r.tarikh as timestamp, CONCAT('ورود کالا: ', k.naam_kala) as description
        FROM vorood r
-       LEFT JOIN kala k ON r.kala_id = k.id
+       LEFT JOIN kala k ON r.kala_id = k.kod_kala
        UNION ALL
        SELECT 'issue' as type, i.tarikh as timestamp, CONCAT('خروج کالا: ', k.naam_kala) as description
        FROM khorooj i
-       LEFT JOIN kala k ON i.kala_id = k.id
+       LEFT JOIN kala k ON i.kala_id = k.kod_kala
        ORDER BY timestamp DESC
        LIMIT 10`
     );
