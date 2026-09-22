@@ -2,6 +2,10 @@ import React, { useState } from 'react';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Dashboard from './components/Dashboard';
+import Inventory from './components/Inventory';
+import Items from './components/Items';
+import Receipts from './components/Receipts';
+import Issues from './components/Issues';
 import './App.css';
 
 export default function App() {
@@ -14,10 +18,10 @@ export default function App() {
         <Header />
         <div className="content-area">
           {activePage === 'dashboard' && <Dashboard />}
-          {activePage === 'items' && <div className="placeholder">صفحه کالاها - در دست توسعه</div>}
-          {activePage === 'receipts' && <div className="placeholder">صفحه رسید انبار - در دست توسعه</div>}
-          {activePage === 'issues' && <div className="placeholder">صفحه خروج انبار - در دست توسعه</div>}
-          {activePage === 'inventory' && <div className="placeholder">صفحه موجودی - در دست توسعه</div>}
+          {activePage === 'items' && <Items />}
+          {activePage === 'receipts' && <Receipts />}
+          {activePage === 'issues' && <Issues />}
+          {activePage === 'inventory' && <Inventory />}
           {activePage === 'reports' && <div className="placeholder">صفحه گزارشات - در دست توسعه</div>}
           {activePage === 'settings' && <div className="placeholder">صفحه تنظیمات - در دست توسعه</div>}
         </div>

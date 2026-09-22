@@ -1,0 +1,120 @@
+.issues-container {
+  padding: 24px;
+}
+
+.issues-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.issues-header h1 {
+  font-size: 28px;
+  font-weight: 600;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.btn-new {
+  padding: 10px 20px;
+  background: #e74c3c;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+
+.btn-new:hover {
+  background: #c0392b;
+}
+
+.issues-stats {
+  margin-bottom: 24px;
+}
+
+.stat-box {
+  display: inline-block;
+  background: white;
+  padding: 20px 32px;
+  border-radius: 12px;
+  border: 1px solid #e0e0e0;
+}
+
+.stat-box .stat-label {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 8px;
+}
+
+.stat-box .stat-value {
+  font-size: 32px;
+  font-weight: 600;
+  color: #e74c3c;
+}
+
+.issues-table-container {
+  background: white;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid #e0e0e0;
+}
+
+.issues-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.issues-table thead {
+  background: #f8f9fa;
+}
+
+.issues-table th {
+  padding: 16px;
+  text-align: right;
+  font-size: 14px;
+  font-weight: 600;
+  color: #666;
+  border-bottom: 2px solid #e0e0e0;
+}
+
+.issues-table td {
+  padding: 16px;
+  text-align: right;
+  font-size: 14px;
+  color: #333;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.issues-table tbody tr:hover {
+  background: #f8f9fa;
+}
+
+.issue-num {
+  font-family: monospace;
+  font-weight: 600;
+  color: #e74c3c;
+}
+
+.stock-info {
+  padding: 12px;
+  background: #e8f5e9;
+  border-radius: 8px;
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: #2e7d32;
+  border: 1px solid #c8e6c9;
+}
+
+.stock-info strong {
+  font-size: 16px;
+  font-weight: 600;
+}
