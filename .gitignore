@@ -1,16 +1,38 @@
+# Dependencies
 node_modules/
 dist/
 build/
+
+# Environment variables
 .env
 .env.local
+
+# Logs
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
 .DS_Store
+Thumbs.db
+
+# IDE
 .claude/
 .vscode/
 .idea/
 *.swp
 *.swo
-.sqlite
-.sqlite3
-db/*.sqlite
-db/*.sqlite3
+
+# Database files (changed during runtime)
+data/warehouse.db
+*.sqlite
+*.sqlite3
+
+# Database backups
+data/*.backup*.db
+data/*.old.db
+data/*.sample*.db
+
+# Test data (exclude large binary Excel files)
+warehouse-source.zip
