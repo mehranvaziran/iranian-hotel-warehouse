@@ -407,6 +407,69 @@
       "tavazihat": "K002"
     },
     {
+      "naam_kala": "استاد CW 100*3000",
+      "vahed": "شاخه",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K003"
+    },
+    {
+      "naam_kala": "استاد C 70*3500",
+      "vahed": "شاخه",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K004"
+    },
+    {
+      "naam_kala": "رانر UW 70*4000",
+      "vahed": "شاخه",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K005"
+    },
+    {
+      "naam_kala": "رانر UW 75*4000",
+      "vahed": "شاخه",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K006"
+    },
+    {
+      "naam_kala": "رانر UW 100*4000",
+      "vahed": "شاخه",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K007"
+    },
+    {
+      "naam_kala": "پنل گچی 84 برگی MR_AK_H2",
+      "vahed": "برگ",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K008"
+    },
+    {
+      "naam_kala": "پنل گچی 92 برگی RGPRO_AK",
+      "vahed": "برگ",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K009"
+    },
+    {
+      "naam_kala": "پنل گچی 100 برگی جی برد",
+      "vahed": "برگ",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "K010"
+    },
+    {
+      "naam_kala": "پیچ پنل 25 میلی TN25",
+      "vahed": "بسته",
+      "mabna_qty": 44,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 1000 عدد"
+    },
+    {
       "kala_id": "K011",
       "naam_kala": "پیچ پنل 35 میلی TN35",
       "vahed": "بسته",
@@ -471,20 +534,75 @@
       "tavazihat": "T002"
     },
     {
+      "naam_kala": "صفحه ساب بزرگ",
+      "vahed": "عدد",
+      "mabna_qty": 1,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "T003"
+    },
+    {
+      "naam_kala": "مته 4 شیار کوتاه نمره 10",
+      "vahed": "عدد",
+      "mabna_qty": 2,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "T004"
+    },
+    {
+      "naam_kala": "مته 4 شیار بلند نمره 10",
+      "vahed": "عدد",
+      "mabna_qty": 2,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "T005"
+    },
+    {
+      "naam_kala": "دستکش کارگری روکشدار",
+      "vahed": "جفت",
+      "mabna_qty": 10,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "T006"
+    },
+    {
+      "naam_kala": "الکترود 3/2 میکا",
+      "vahed": "بسته",
+      "mabna_qty": 5,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "هر بسته 5 کیلو"
+    },
+    {
       "kala_id": "C001",
       "naam_kala": "ضد زنگ سناتور",
       "vahed": "لیتر",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
       "tavazihat": "C002"
+    },
+    {
+      "naam_kala": "تینر",
+      "vahed": "لیتر",
+      "mabna_qty": 2,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "S001"
+    },
+    {
+      "naam_kala": "قوطی 40*80",
+      "vahed": "شاخه",
+      "mabna_qty": 0,
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": "S002"
+    },
+    {
+      "naam_kala": "میخ 6 سانتی",
+      "vahed": "بسته",
+      "mabna_qty": 3,
+      "tarikh_mabna": "1405/06/14"
     }
   ],
   "metadata": {
-    "extracted_at": "2026-09-20T07:02:54.037Z",
+    "extracted_at": "2026-09-21T12:17:02.973Z",
     "source_file": "سیستم انبار.xlsx",
     "total_items": 28,
     "total_receipts": 2,
     "total_issues": 3,
-    "total_baseline": 10
+    "total_baseline": 27
   }
 }

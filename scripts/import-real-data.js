@@ -194,16 +194,14 @@ async function importRealExcelData() {
       .slice(1) // Skip header
       .forEach(row => {
         const r = sheet8[row];
-        if (r['A']) {
-          baseline.push({
-            kala_id: r['A'],
-            naam_kala: r['B'],
-            vahed: r['C'],
-            mabna_qty: parseInt(r['D']) || 0,
-            tarikh_mabna: r['E'],
-            tavazihat: r['F']
-          });
-        }
+        baseline.push({
+          kala_id: r['A'],
+          naam_kala: r['B'],
+          vahed: r['C'],
+          mabna_qty: parseInt(r['D']) || 0,
+          tarikh_mabna: r['E'],
+          tavazihat: r['F']
+        });
       });
 
     console.log(`✅ Extracted ${baseline.length} baseline inventory records\n`);
