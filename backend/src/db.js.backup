@@ -1,0 +1,303 @@
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { mkdirSync, existsSync, readFileSync } from 'fs';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dbDir = path.join(__dirname, '..', '..', 'data');
+const dbPath = path.join(dbDir, 'warehouse.db');
+
+export async function initDatabase() {
+  mkdirSync(dbDir, { recursive: true });
+
+  const db = await open({
+    filename: dbPath,
+    driver: sqlite3.Database,
+  });
+
+  await db.exec('PRAGMA foreign_keys = ON');
+
+  // Check if tables exist
+  const tableCheck = await db.get(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='kala'"
+  );
+
+  // Create new schema tables
+  await db.exec(`
+    CREATE TABLE IF NOT EXISTS kala (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kod_kala TEXT UNIQUE NOT NULL,
+      naam_kala TEXT NOT NULL,
+      goh TEXT,
+      zirgoh TEXT,
+      vahed TEXT,
+      hadd_aqal_mojoodi REAL DEFAULT 0,
+      tavazihat TEXT,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS mojoodi_mabna (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kala_id TEXT NOT NULL,
+      mabna_qty REAL NOT NULL,
+      tarikh_mabna DATE,
+      tavazihat TEXT,
+      FOREIGN KEY (kala_id) REFERENCES kala(kod_kala)
+    );
+
+    CREATE TABLE IF NOT EXISTS receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_number TEXT UNIQUE NOT NULL,
+      tarikh DATE NOT NULL,
+      tavazihat TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS receipt_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_id INTEGER NOT NULL,
+      kala_id TEXT NOT NULL,
+      maqdar REAL NOT NULL,
+      vahed TEXT,
+      tavazihat TEXT,
+      radif INTEGER,
+      FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (kala_id) REFERENCES kala(kod_kala)
+    );
+
+    CREATE TABLE IF NOT EXISTS issues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_number TEXT UNIQUE NOT NULL,
+      tarikh DATE NOT NULL,
+      tahvil_gir TEXT,
+      mahl_masraf TEXT,
+      tavazihat TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS issue_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id INTEGER NOT NULL,
+      kala_id TEXT NOT NULL,
+      maqdar REAL NOT NULL,
+      vahed TEXT,
+      tavazihat TEXT,
+      radif INTEGER,
+      FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+      FOREIGN KEY (kala_id) REFERENCES kala(kod_kala)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_kala_kod ON kala(kod_kala);
+    CREATE INDEX IF NOT EXISTS idx_kala_active ON kala(is_active);
+    CREATE INDEX IF NOT EXISTS idx_receipt_lines_receipt ON receipt_lines(receipt_id);
+    CREATE INDEX IF NOT EXISTS idx_receipt_lines_item ON receipt_lines(kala_id);
+    CREATE INDEX IF NOT EXISTS idx_issue_lines_issue ON issue_lines(issue_id);
+    CREATE INDEX IF NOT EXISTS idx_issue_lines_item ON issue_lines(kala_id);
+    CREATE INDEX IF NOT EXISTS idx_receipts_date ON receipts(tarikh);
+    CREATE INDEX IF NOT EXISTS idx_issues_date ON issues(tarikh);
+  `);
+
+  // Always attempt migration for existing databases
+  if (tableCheck) {
+    await migrateToNewSchema(db);
+  } else {
+    await loadInitialData(db);
+  }
+
+  return db;
+}
+
+async function migrateToNewSchema(db) {
+  console.log('Checking schema migration...');
+
+  // Step 1: Check and migrate kala table
+  const kalaInfo = await db.all(`PRAGMA table_info(kala)`);
+  const hasMojoodiFael = kalaInfo.some(col => col.name === 'mojoodi_fael');
+  const hasIsActive = kalaInfo.some(col => col.name === 'is_active');
+
+  if (hasMojoodiFael || !hasIsActive) {
+    console.log('Migrating kala table (removing mojoodi_fael, adding is_active)...');
+
+    await db.exec(`
+      CREATE TABLE kala_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kod_kala TEXT UNIQUE NOT NULL,
+        naam_kala TEXT NOT NULL,
+        goh TEXT,
+        zirgoh TEXT,
+        vahed TEXT,
+        hadd_aqal_mojoodi REAL DEFAULT 0,
+        tavazihat TEXT,
+        is_active INTEGER DEFAULT 1,
+        created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      );
+
+      INSERT INTO kala_new (id, kod_kala, naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi, tavazihat)
+      SELECT id, kod_kala, naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi,
+             COALESCE(tavazihat, '')
+      FROM kala;
+
+      DROP TABLE kala;
+      ALTER TABLE kala_new RENAME TO kala;
+
+      CREATE INDEX idx_kala_kod ON kala(kod_kala);
+      CREATE INDEX idx_kala_active ON kala(is_active);
+    `);
+
+    console.log('✅ kala table migrated');
+  }
+
+  // Step 2: Check if document tables need migration
+  const oldVoroodExists = await db.get(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='vorood'"
+  );
+
+  if (!oldVoroodExists) {
+    console.log('No old vorood table to migrate');
+    return;
+  }
+
+  const receiptsHasData = await db.get(`SELECT COUNT(*) as count FROM receipts`);
+
+  if (receiptsHasData.count > 0) {
+    console.log('Receipts already migrated');
+
+    // Just drop old tables if they exist
+    await db.exec(`DROP TABLE IF EXISTS vorood`);
+    await db.exec(`DROP TABLE IF EXISTS khorooj`);
+    console.log('Old tables removed');
+    return;
+  }
+
+  console.log('Migrating from old single-table structure to document structure...');
+
+    // Migrate receipts
+    const oldReceipts = await db.all(`
+      SELECT DISTINCT receipt_num, tarikh, tavazihat
+      FROM vorood
+      WHERE receipt_num IS NOT NULL
+      ORDER BY tarikh, receipt_num
+    `);
+
+    for (const receipt of oldReceipts) {
+      const receiptResult = await db.run(
+        `INSERT INTO receipts (receipt_number, tarikh, tavazihat) VALUES (?, ?, ?)`,
+        [receipt.receipt_num, receipt.tarikh, receipt.tavazihat || '']
+      );
+
+      const lines = await db.all(
+        `SELECT kala_id, maqdar, vahed, tavazihat, radif
+         FROM vorood
+         WHERE receipt_num = ?
+         ORDER BY COALESCE(radif, 999), id`,
+        [receipt.receipt_num]
+      );
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        await db.run(
+          `INSERT INTO receipt_lines (receipt_id, kala_id, maqdar, vahed, tavazihat, radif)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [receiptResult.lastID, line.kala_id, line.maqdar, line.vahed, line.tavazihat || '', i + 1]
+        );
+      }
+    }
+
+    console.log(`✅ Migrated ${oldReceipts.length} receipts`);
+
+    // Migrate issues
+    const oldKhoroojExists = await db.get(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='khorooj'"
+    );
+
+    if (oldKhoroojExists) {
+      const oldIssues = await db.all(`
+        SELECT DISTINCT issue_num, tarikh, tahvil_gir, mahl_masraf, tavazihat
+        FROM khorooj
+        WHERE issue_num IS NOT NULL
+        ORDER BY tarikh, issue_num
+      `);
+
+      for (const issue of oldIssues) {
+        const issueResult = await db.run(
+          `INSERT INTO issues (issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat)
+           VALUES (?, ?, ?, ?, ?)`,
+          [issue.issue_num, issue.tarikh, issue.tahvil_gir || '', issue.mahl_masraf || '', issue.tavazihat || '']
+        );
+
+        const lines = await db.all(
+          `SELECT kala_id, maqdar, vahed, tavazihat, radif
+           FROM khorooj
+           WHERE issue_num = ?
+           ORDER BY COALESCE(radif, 999), id`,
+          [issue.issue_num]
+        );
+
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          await db.run(
+            `INSERT INTO issue_lines (issue_id, kala_id, maqdar, vahed, tavazihat, radif)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [issueResult.lastID, line.kala_id, line.maqdar, line.vahed, line.tavazihat || '', i + 1]
+          );
+        }
+      }
+
+      console.log(`✅ Migrated ${oldIssues.length} issues`);
+    }
+
+    // Drop old tables
+    await db.exec(`DROP TABLE IF EXISTS vorood`);
+    await db.exec(`DROP TABLE IF EXISTS khorooj`);
+
+    console.log('✅ Old tables removed');
+  }
+
+  console.log('✅ Migration completed');
+}
+
+async function loadInitialData(db) {
+  const realDataPath = path.join(__dirname, '..', 'data', 'real-warehouse-data.json');
+
+  if (!existsSync(realDataPath)) {
+    console.log('⚠️  No initial data found');
+    return;
+  }
+
+  try {
+    const realData = JSON.parse(readFileSync(realDataPath, 'utf-8'));
+    console.log('Loading initial warehouse data...');
+
+    // Load items
+    for (const item of realData.items) {
+      await db.run(
+        `INSERT INTO kala (kod_kala, naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [item.kod_kala, item.naam_kala, item.goh, item.zirgoh, item.vahed, item.hadd_aqal_mojoodi || 0]
+      );
+    }
+    console.log(`  ✓ Loaded ${realData.items.length} items`);
+
+    // Load baseline
+    if (realData.baseline) {
+      for (const baseline of realData.baseline) {
+        await db.run(
+          `INSERT INTO mojoodi_mabna (kala_id, mabna_qty, tarikh_mabna, tavazihat)
+           VALUES (?, ?, ?, ?)`,
+          [baseline.kala_id, baseline.mabna_qty, baseline.tarikh_mabna, baseline.tavazihat || '']
+        );
+      }
+      console.log(`  ✓ Loaded ${realData.baseline.length} baseline records`);
+    }
+
+    console.log('✅ Initial data loaded');
+  } catch (err) {
+    console.error('Error loading initial data:', err.message);
+  }
+}

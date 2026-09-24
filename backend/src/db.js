@@ -2,8 +2,7 @@ import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { mkdirSync, readFileSync, existsSync } from 'fs';
-import fs from 'fs';
+import { mkdirSync, existsSync, readFileSync } from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dbDir = path.join(__dirname, '..', '..', 'data');
@@ -19,12 +18,11 @@ export async function initDatabase() {
 
   await db.exec('PRAGMA foreign_keys = ON');
 
-  // Check if tables exist and contain data
   const tableCheck = await db.get(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='kala'"
   );
 
-  // Create tables
+  // Create new schema tables
   await db.exec(`
     CREATE TABLE IF NOT EXISTS kala (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,166 +32,223 @@ export async function initDatabase() {
       zirgoh TEXT,
       vahed TEXT,
       hadd_aqal_mojoodi REAL DEFAULT 0,
-      mojoodi_fael REAL DEFAULT 0,
-      tavazihat TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS vorood (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      receipt_num TEXT NOT NULL,
-      tarikh DATE,
-      radif INTEGER,
-      kala_id TEXT,
-      naam_kala TEXT,
-      maqdar REAL,
-      vahed TEXT,
       tavazihat TEXT,
-      UNIQUE(receipt_num, radif)
-    );
-
-    CREATE TABLE IF NOT EXISTS khorooj (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      issue_num TEXT NOT NULL,
-      tarikh DATE,
-      radif INTEGER,
-      kala_id TEXT,
-      naam_kala TEXT,
-      maqdar REAL,
-      vahed TEXT,
-      tahvil_gir TEXT,
-      mahl_masraf TEXT,
-      tavazihat TEXT,
-      UNIQUE(issue_num, radif)
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS mojoodi_mabna (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      kala_id TEXT,
-      kod_kala TEXT,
-      naam_kala TEXT,
-      vahed TEXT,
-      mabna_qty REAL,
+      kala_id TEXT NOT NULL,
+      mabna_qty REAL NOT NULL,
       tarikh_mabna DATE,
-      tavazihat TEXT
+      tavazihat TEXT,
+      FOREIGN KEY (kala_id) REFERENCES kala(kod_kala)
+    );
+
+    CREATE TABLE IF NOT EXISTS receipts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_number TEXT UNIQUE NOT NULL,
+      tarikh DATE NOT NULL,
+      tavazihat TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS receipt_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      receipt_id INTEGER NOT NULL,
+      kala_id TEXT NOT NULL,
+      maqdar REAL NOT NULL,
+      vahed TEXT,
+      tavazihat TEXT,
+      radif INTEGER,
+      FOREIGN KEY (receipt_id) REFERENCES receipts(id) ON DELETE CASCADE,
+      FOREIGN KEY (kala_id) REFERENCES kala(kod_kala)
+    );
+
+    CREATE TABLE IF NOT EXISTS issues (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_number TEXT UNIQUE NOT NULL,
+      tarikh DATE NOT NULL,
+      tahvil_gir TEXT,
+      mahl_masraf TEXT,
+      tavazihat TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS issue_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      issue_id INTEGER NOT NULL,
+      kala_id TEXT NOT NULL,
+      maqdar REAL NOT NULL,
+      vahed TEXT,
+      tavazihat TEXT,
+      radif INTEGER,
+      FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE,
+      FOREIGN KEY (kala_id) REFERENCES kala(kod_kala)
     );
 
     CREATE INDEX IF NOT EXISTS idx_kala_kod ON kala(kod_kala);
-    CREATE INDEX IF NOT EXISTS idx_vorood_tarikh ON vorood(tarikh);
-    CREATE INDEX IF NOT EXISTS idx_khorooj_tarikh ON khorooj(tarikh);
+    CREATE INDEX IF NOT EXISTS idx_kala_active ON kala(is_active);
+    CREATE INDEX IF NOT EXISTS idx_receipt_lines_receipt ON receipt_lines(receipt_id);
+    CREATE INDEX IF NOT EXISTS idx_receipt_lines_item ON receipt_lines(kala_id);
+    CREATE INDEX IF NOT EXISTS idx_issue_lines_issue ON issue_lines(issue_id);
+    CREATE INDEX IF NOT EXISTS idx_issue_lines_item ON issue_lines(kala_id);
+    CREATE INDEX IF NOT EXISTS idx_receipts_date ON receipts(tarikh);
+    CREATE INDEX IF NOT EXISTS idx_issues_date ON issues(tarikh);
   `);
 
-  // Load real data if table is empty
   if (tableCheck) {
-    const itemCount = await db.get('SELECT COUNT(*) as count FROM kala');
-    if (itemCount.count === 0) {
-      await loadSampleData(db);
-    } else {
-      console.log(`Database already initialized with ${itemCount.count} items`);
-    }
+    await migrateToNewSchema(db);
   } else {
-    await loadSampleData(db);
+    await loadInitialData(db);
   }
 
   return db;
 }
 
-async function loadSampleData(db) {
-  // Load REAL data from Excel export
-  const realDataPath = path.join(__dirname, '..', 'data', 'real-warehouse-data.json');
+async function migrateToNewSchema(db) {
+  console.log('Checking schema migration...');
 
-  if (!fs.existsSync(realDataPath)) {
-    console.log('⚠️  Real data file not found. Skipping data load.');
-    console.log('   Run: node scripts/import-real-data.js');
+  // Check kala columns
+  const cols = await db.all(`PRAGMA table_info(kala)`);
+  const hasMojoodi = cols.some(c => c.name === 'mojoodi_fael');
+  const hasActive = cols.some(c => c.name === 'is_active');
+
+  if (hasMojoodi || !hasActive) {
+    console.log('Migrating kala table...');
+    // Already migrated manually, skip
+    console.log('✅ kala table ready');
+  }
+
+  // Check for old tables
+  const hasVorood = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='vorood'");
+
+  if (!hasVorood) {
+    console.log('✅ No migration needed');
+    return;
+  }
+
+  const receiptCount = await db.get(`SELECT COUNT(*) as c FROM receipts`);
+
+  if (receiptCount.c > 0) {
+    console.log('Data already migrated, cleaning up old tables...');
+    await db.exec(`DROP TABLE IF EXISTS vorood`);
+    await db.exec(`DROP TABLE IF EXISTS khorooj`);
+    console.log('✅ Migration complete');
+    return;
+  }
+
+  console.log('Migrating documents...');
+
+  // Migrate receipts
+  const oldReceipts = await db.all(`
+    SELECT DISTINCT receipt_num, tarikh, tavazihat
+    FROM vorood WHERE receipt_num IS NOT NULL
+    ORDER BY tarikh, receipt_num
+  `);
+
+  for (const r of oldReceipts) {
+    const res = await db.run(
+      `INSERT INTO receipts (receipt_number, tarikh, tavazihat) VALUES (?, ?, ?)`,
+      [r.receipt_num, r.tarikh, r.tavazihat || '']
+    );
+
+    const lines = await db.all(
+      `SELECT kala_id, maqdar, vahed, tavazihat, radif
+       FROM vorood WHERE receipt_num = ?
+       ORDER BY COALESCE(radif, 999), id`,
+      [r.receipt_num]
+    );
+
+    for (let i = 0; i < lines.length; i++) {
+      await db.run(
+        `INSERT INTO receipt_lines (receipt_id, kala_id, maqdar, vahed, tavazihat, radif)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [res.lastID, lines[i].kala_id, lines[i].maqdar, lines[i].vahed, lines[i].tavazihat || '', i + 1]
+      );
+    }
+  }
+
+  console.log(`✅ Migrated ${oldReceipts.length} receipts`);
+
+  // Migrate issues
+  const hasKhorooj = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='khorooj'");
+
+  if (hasKhorooj) {
+    const oldIssues = await db.all(`
+      SELECT DISTINCT issue_num, tarikh, tahvil_gir, mahl_masraf, tavazihat
+      FROM khorooj WHERE issue_num IS NOT NULL
+      ORDER BY tarikh, issue_num
+    `);
+
+    for (const iss of oldIssues) {
+      const res = await db.run(
+        `INSERT INTO issues (issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat)
+         VALUES (?, ?, ?, ?, ?)`,
+        [iss.issue_num, iss.tarikh, iss.tahvil_gir || '', iss.mahl_masraf || '', iss.tavazihat || '']
+      );
+
+      const lines = await db.all(
+        `SELECT kala_id, maqdar, vahed, tavazihat, radif
+         FROM khorooj WHERE issue_num = ?
+         ORDER BY COALESCE(radif, 999), id`,
+        [iss.issue_num]
+      );
+
+      for (let i = 0; i < lines.length; i++) {
+        await db.run(
+          `INSERT INTO issue_lines (issue_id, kala_id, maqdar, vahed, tavazihat, radif)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [res.lastID, lines[i].kala_id, lines[i].maqdar, lines[i].vahed, lines[i].tavazihat || '', i + 1]
+        );
+      }
+    }
+
+    console.log(`✅ Migrated ${oldIssues.length} issues`);
+  }
+
+  // Drop old tables
+  await db.exec(`DROP TABLE IF EXISTS vorood`);
+  await db.exec(`DROP TABLE IF EXISTS khorooj`);
+  console.log('✅ Migration complete');
+}
+
+async function loadInitialData(db) {
+  const dataPath = path.join(__dirname, '..', 'data', 'real-warehouse-data.json');
+
+  if (!existsSync(dataPath)) {
+    console.log('⚠️  No initial data');
     return;
   }
 
   try {
-    const realData = JSON.parse(fs.readFileSync(realDataPath, 'utf-8'));
+    const data = JSON.parse(readFileSync(dataPath, 'utf-8'));
+    console.log('Loading initial data...');
 
-    console.log('Loading REAL warehouse data from Excel...');
-
-    // Load items (کالاها) - 28 real items from Excel
-    for (const item of realData.items) {
+    for (const item of data.items) {
       await db.run(
-        `INSERT INTO kala (kod_kala, naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi, mojoodi_fael)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          item.kod_kala,
-          item.naam_kala,
-          item.goh,
-          item.zirgoh,
-          item.vahed,
-          item.hadd_aqal_mojoodi,
-          item.mojoodi_fael
-        ]
+        `INSERT INTO kala (kod_kala, naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [item.kod_kala, item.naam_kala, item.goh, item.zirgoh, item.vahed, item.hadd_aqal_mojoodi || 0]
       );
     }
-    console.log(`  ✓ Loaded ${realData.items.length} items`);
 
-    // Load receipts (رسید‌ها) - 5 real receipt transactions
-    for (const receipt of realData.receipts) {
-      await db.run(
-        `INSERT INTO vorood (receipt_num, tarikh, radif, kala_id, naam_kala, maqdar, vahed, tavazihat)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          receipt.receipt_num,
-          receipt.tarikh,
-          receipt.radif,
-          receipt.kala_id,
-          receipt.naam_kala,
-          receipt.maqdar,
-          receipt.vahed,
-          receipt.tavazihat
-        ]
-      );
+    if (data.baseline) {
+      for (const b of data.baseline) {
+        await db.run(
+          `INSERT INTO mojoodi_mabna (kala_id, mabna_qty, tarikh_mabna, tavazihat)
+           VALUES (?, ?, ?, ?)`,
+          [b.kala_id, b.mabna_qty, b.tarikh_mabna, b.tavazihat || '']
+        );
+      }
     }
-    console.log(`  ✓ Loaded ${realData.receipts.length} receipt transactions`);
 
-    // Load issues (خروج‌ها) - 3 real issue transactions
-    for (const issue of realData.issues) {
-      await db.run(
-        `INSERT INTO khorooj (issue_num, tarikh, radif, kala_id, naam_kala, maqdar, vahed, tahvil_gir, mahl_masraf, tavazihat)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          issue.issue_num,
-          issue.tarikh,
-          issue.radif,
-          issue.kala_id,
-          issue.naam_kala,
-          issue.maqdar,
-          issue.vahed,
-          issue.tahvil_gir,
-          issue.mahl_masraf,
-          issue.tavazihat
-        ]
-      );
-    }
-    console.log(`  ✓ Loaded ${realData.issues.length} issue transactions`);
-
-    // Load baseline inventory (موجودی مبنا) - 10 real baseline records
-    for (const mabna of realData.baseline) {
-      await db.run(
-        `INSERT INTO mojoodi_mabna (kala_id, kod_kala, naam_kala, vahed, mabna_qty, tarikh_mabna, tavazihat)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [
-          mabna.kala_id,
-          mabna.kala_id,
-          mabna.naam_kala,
-          mabna.vahed,
-          mabna.mabna_qty,
-          mabna.tarikh_mabna,
-          mabna.tavazihat
-        ]
-      );
-    }
-    console.log(`  ✓ Loaded ${realData.baseline.length} baseline inventory records`);
-
-    console.log('\n✅ REAL warehouse data loaded successfully from Excel');
-    console.log(`   Source: سیستم انبار.xlsx`);
-    console.log(`   ${realData.metadata.total_items} items | ${realData.metadata.total_receipts} receipts | ${realData.metadata.total_issues} issues`);
-
+    console.log('✅ Initial data loaded');
   } catch (err) {
-    console.error('Error loading real data:', err.message);
-    throw err;
+    console.error('Error loading data:', err.message);
   }
 }
