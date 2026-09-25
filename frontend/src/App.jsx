@@ -6,6 +6,7 @@ import Inventory from './components/Inventory';
 import Items from './components/Items';
 import Receipts from './components/Receipts';
 import Issues from './components/Issues';
+import Reports from './components/Reports';
 import './App.css';
 
 export default function App() {
@@ -22,7 +23,7 @@ export default function App() {
           {activePage === 'receipts' && <Receipts />}
           {activePage === 'issues' && <Issues />}
           {activePage === 'inventory' && <Inventory />}
-          {activePage === 'reports' && <div className="placeholder">صفحه گزارشات - در دست توسعه</div>}
+          {activePage === 'reports' && <Reports />}
           {activePage === 'settings' && <div className="placeholder">صفحه تنظیمات - در دست توسعه</div>}
         </div>
       </div>

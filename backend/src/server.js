@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import { initDatabase } from './db.js';
 import { InventoryService } from './services/inventoryService.js';
+import { receiptHtml, issueHtml, cardexHtml, inventoryHtml } from './printTemplates.js';
 
 const app = express();
 const PORT = 3000;
@@ -126,6 +127,26 @@ app.get('/api/dashboard/activity', requireDB, async (req, res) => {
 // Get all items - using centralized inventory
 app.get('/api/items', requireDB, async (req, res) => {
   try {
+    if (req.query.include_inactive === '1') {
+      // Full catalog incl. deactivated items, still with derived stock
+      const items = await db.all(`SELECT * FROM kala ORDER BY naam_kala`);
+      const result = await Promise.all(
+        items.map(async (item) => {
+          const totals = await inventoryService.getItemTotals(item.kod_kala);
+          return {
+            ...item,
+            baseline_qty: totals.baseline,
+            total_receipts: totals.receipts,
+            total_issues: totals.issues,
+            current_stock: totals.current,
+            status:
+              totals.current === 0 ? 'تمام شده' :
+              totals.current < item.hadd_aqal_mojoodi ? 'زیر حد مجاز' : 'موجود'
+          };
+        })
+      );
+      return res.json(result);
+    }
     const inventory = await inventoryService.getAllInventory();
     res.json(inventory);
   } catch (error) {
@@ -214,6 +235,7 @@ app.get('/api/receipts/:id', requireDB, async (req, res) => {
       `SELECT rl.*, k.naam_kala
        FROM receipt_lines rl
        LEFT JOIN kala k ON rl.kala_id = k.kod_kala
+       WHERE rl.receipt_id = ?
        ORDER BY rl.radif, rl.id`,
       [req.params.id]
     );
@@ -273,6 +295,30 @@ app.post('/api/receipts', requireDB, async (req, res) => {
     }
   } catch (error) {
     console.error('Error creating receipt:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Delete receipt (cascades to its lines)
+app.delete('/api/receipts/:id', requireDB, async (req, res) => {
+  try {
+    const receipt = await db.get(`SELECT id FROM receipts WHERE id = ?`, [req.params.id]);
+    if (!receipt) {
+      return res.status(404).json({ error: 'Receipt not found' });
+    }
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run(`DELETE FROM receipt_lines WHERE receipt_id = ?`, [req.params.id]);
+      await db.run(`DELETE FROM receipts WHERE id = ?`, [req.params.id]);
+      await db.run('COMMIT');
+      res.json({ message: 'Receipt deleted', deleted: true });
+    } catch (err) {
+      await db.run('ROLLBACK');
+      throw err;
+    }
+  } catch (error) {
+    console.error('Error deleting receipt:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -387,6 +433,30 @@ app.post('/api/issues', requireDB, async (req, res) => {
   }
 });
 
+// Delete issue (cascades to its lines)
+app.delete('/api/issues/:id', requireDB, async (req, res) => {
+  try {
+    const issue = await db.get(`SELECT id FROM issues WHERE id = ?`, [req.params.id]);
+    if (!issue) {
+      return res.status(404).json({ error: 'Issue not found' });
+    }
+
+    await db.run('BEGIN TRANSACTION');
+    try {
+      await db.run(`DELETE FROM issue_lines WHERE issue_id = ?`, [req.params.id]);
+      await db.run(`DELETE FROM issues WHERE id = ?`, [req.params.id]);
+      await db.run('COMMIT');
+      res.json({ message: 'Issue deleted', deleted: true });
+    } catch (err) {
+      await db.run('ROLLBACK');
+      throw err;
+    }
+  } catch (error) {
+    console.error('Error deleting issue:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Suggest next item code
 app.get('/api/items/suggest-code/:prefix', requireDB, async (req, res) => {
   try {
@@ -446,12 +516,21 @@ app.put('/api/items/:kod_kala', requireDB, async (req, res) => {
   try {
     const { naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi, tavazihat } = req.body;
 
+    if (!naam_kala) {
+      return res.status(400).json({ error: 'نام کالا الزامی است' });
+    }
+
+    const existing = await db.get(`SELECT kod_kala FROM kala WHERE kod_kala = ?`, [req.params.kod_kala]);
+    if (!existing) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
     await db.run(
       `UPDATE kala
        SET naam_kala = ?, goh = ?, zirgoh = ?, vahed = ?, hadd_aqal_mojoodi = ?, tavazihat = ?,
            updated_at = CURRENT_TIMESTAMP
        WHERE kod_kala = ?`,
-      [naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi, tavazihat, req.params.kod_kala]
+      [naam_kala, goh || '', zirgoh || '', vahed || '', hadd_aqal_mojoodi || 0, tavazihat || '', req.params.kod_kala]
     );
 
     res.json({ message: 'Item updated successfully' });
@@ -499,6 +578,170 @@ app.delete('/api/items/:kod_kala', requireDB, async (req, res) => {
   } catch (error) {
     console.error('Error deleting item:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// Reports (گزارشات)
+// ============================================================
+
+// Inventory report - full derived inventory, optionally by category
+app.get('/api/reports/inventory', requireDB, async (req, res) => {
+  try {
+    const inventory = await inventoryService.getAllInventory();
+    const group = req.query.group;
+    const filtered = group && group !== 'all' ? inventory.filter(i => i.goh === group) : inventory;
+    res.json({
+      reportDate: new Date().toISOString().split('T')[0],
+      group: group && group !== 'all' ? group : 'همه گروه‌ها',
+      totals: filtered.reduce(
+        (t, i) => ({
+          baseline: t.baseline + i.baseline_qty,
+          receipts: t.receipts + i.total_receipts,
+          issues: t.issues + i.total_issues,
+          current: t.current + i.current_stock,
+        }),
+        { baseline: 0, receipts: 0, issues: 0, current: 0 }
+      ),
+      items: filtered,
+    });
+  } catch (error) {
+    console.error('Error fetching inventory report:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Receipts report with lines, filtered by date range
+app.get('/api/reports/receipts', requireDB, async (req, res) => {
+  try {
+    const receipts = await inventoryService.getReceiptsReport({
+      from: req.query.from || null,
+      to: req.query.to || null,
+    });
+    const totalQty = receipts.reduce(
+      (s, r) => s + r.lines.reduce((ls, l) => ls + Number(l.maqdar || 0), 0), 0
+    );
+    res.json({ count: receipts.length, total_quantity: totalQty, receipts });
+  } catch (error) {
+    console.error('Error fetching receipts report:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Issues report with lines, filtered by date range
+app.get('/api/reports/issues', requireDB, async (req, res) => {
+  try {
+    const issues = await inventoryService.getIssuesReport({
+      from: req.query.from || null,
+      to: req.query.to || null,
+    });
+    const totalQty = issues.reduce(
+      (s, i) => s + i.lines.reduce((ls, l) => ls + Number(l.maqdar || 0), 0), 0
+    );
+    res.json({ count: issues.length, total_quantity: totalQty, issues });
+  } catch (error) {
+    console.error('Error fetching issues report:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// All-item movement report (flat cardex)
+app.get('/api/reports/movements', requireDB, async (req, res) => {
+  try {
+    const movements = await inventoryService.getMovementsReport({
+      from: req.query.from || null,
+      to: req.query.to || null,
+      kala_id: req.query.kala_id || null,
+    });
+    res.json({ count: movements.length, movements });
+  } catch (error) {
+    console.error('Error fetching movements report:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================================
+// Printing (چاپ / PDF) - server-rendered RTL print pages
+// ============================================================
+
+// Print receipt voucher
+app.get('/api/print/receipt/:id', requireDB, async (req, res) => {
+  try {
+    const receipt = await db.get(`SELECT * FROM receipts WHERE id = ?`, [req.params.id]);
+    if (!receipt) return res.status(404).send('Receipt not found');
+
+    const lines = await db.all(
+      `SELECT rl.*, k.naam_kala
+       FROM receipt_lines rl
+       LEFT JOIN kala k ON rl.kala_id = k.kod_kala
+       WHERE rl.receipt_id = ?
+       ORDER BY rl.radif, rl.id`,
+      [req.params.id]
+    );
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(receiptHtml(receipt, lines));
+  } catch (error) {
+    console.error('Error printing receipt:', error);
+    res.status(500).send('Error generating print view');
+  }
+});
+
+// Print issue voucher
+app.get('/api/print/issue/:id', requireDB, async (req, res) => {
+  try {
+    const issue = await db.get(`SELECT * FROM issues WHERE id = ?`, [req.params.id]);
+    if (!issue) return res.status(404).send('Issue not found');
+
+    const lines = await db.all(
+      `SELECT il.*, k.naam_kala
+       FROM issue_lines il
+       LEFT JOIN kala k ON il.kala_id = k.kod_kala
+       WHERE il.issue_id = ?
+       ORDER BY il.radif, il.id`,
+      [req.params.id]
+    );
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(issueHtml(issue, lines));
+  } catch (error) {
+    console.error('Error printing issue:', error);
+    res.status(500).send('Error generating print view');
+  }
+});
+
+// Print item cardex
+app.get('/api/print/cardex/:kod_kala', requireDB, async (req, res) => {
+  try {
+    const item = await db.get(`SELECT * FROM kala WHERE kod_kala = ?`, [req.params.kod_kala]);
+    if (!item) return res.status(404).send('Item not found');
+
+    const cardex = await inventoryService.getItemCardex(req.params.kod_kala);
+    const totals = await inventoryService.getItemTotals(req.params.kod_kala);
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(cardexHtml(item, cardex, totals));
+  } catch (error) {
+    console.error('Error printing cardex:', error);
+    res.status(500).send('Error generating print view');
+  }
+});
+
+// Print inventory report
+app.get('/api/print/inventory', requireDB, async (req, res) => {
+  try {
+    const group = req.query.group;
+    const inventory = await inventoryService.getAllInventory();
+    const filtered = group && group !== 'all' ? inventory.filter(i => i.goh === group) : inventory;
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(inventoryHtml(filtered, {
+      reportDate: new Date().toISOString().split('T')[0],
+      group: group && group !== 'all' ? group : 'همه گروه‌ها',
+    }));
+  } catch (error) {
+    console.error('Error printing inventory:', error);
+    res.status(500).send('Error generating print view');
   }
 });
 

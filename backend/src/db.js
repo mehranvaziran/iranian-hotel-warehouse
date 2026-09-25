@@ -238,11 +238,20 @@ async function loadInitialData(db) {
     }
 
     if (data.baseline) {
+      // The Excel extraction shifted the item code into the notes column for
+      // most baseline rows, so kala_id is often missing. Fall back to matching
+      // the item by name, which is present on every row.
+      const codeByName = new Map(data.items.map((i) => [i.naam_kala, i.kod_kala]));
       for (const b of data.baseline) {
+        const kalaId = b.kala_id || codeByName.get(b.naam_kala);
+        if (!kalaId) {
+          console.warn(`⚠️  Baseline row for "${b.naam_kala}" could not be mapped to an item, skipped`);
+          continue;
+        }
         await db.run(
           `INSERT INTO mojoodi_mabna (kala_id, mabna_qty, tarikh_mabna, tavazihat)
            VALUES (?, ?, ?, ?)`,
-          [b.kala_id, b.mabna_qty, b.tarikh_mabna, b.tavazihat || '']
+          [kalaId, b.mabna_qty, b.tarikh_mabna, b.tavazihat || '']
         );
       }
     }

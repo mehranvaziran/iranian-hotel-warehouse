@@ -250,4 +250,129 @@ export class InventoryService {
       .sort((a, b) => (a.hadd_aqal_mojoodi - a.current_stock) - (b.hadd_aqal_mojoodi - b.current_stock))
       .slice(0, 10);
   }
+
+  /**
+   * Movement totals for a single item (used by cardex print header).
+   * @param {string} itemCode - Item kod_kala
+   * @returns {Promise<Object>} { baseline, receipts, issues, current }
+   */
+  async getItemTotals(itemCode) {
+    const rows = await this.db.get(
+      `SELECT
+         COALESCE((SELECT SUM(mabna_qty) FROM mojoodi_mabna WHERE kala_id = ?), 0) AS baseline,
+         COALESCE((SELECT SUM(maqdar)  FROM receipt_lines WHERE kala_id = ?), 0) AS receipts,
+         COALESCE((SELECT SUM(maqdar)  FROM issue_lines  WHERE kala_id = ?), 0) AS issues`,
+      [itemCode, itemCode, itemCode]
+    );
+    const baseline = Number(rows.baseline || 0);
+    const receipts = Number(rows.receipts || 0);
+    const issues = Number(rows.issues || 0);
+    return { baseline, receipts, issues, current: baseline + receipts - issues };
+  }
+
+  /**
+   * Receipts report with their lines, optionally filtered by date range.
+   * @param {Object} [filters] - { from, to } Persian-date bounds (inclusive)
+   * @returns {Promise<Array>} Receipt headers each with a `lines` array
+   */
+  async getReceiptsReport(filters = {}) {
+    const where = [];
+    const params = [];
+    if (filters.from) { where.push('r.tarikh >= ?'); params.push(filters.from); }
+    if (filters.to) { where.push('r.tarikh <= ?'); params.push(filters.to); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const receipts = await this.db.all(
+      `SELECT r.* FROM receipts r ${whereSql} ORDER BY r.tarikh DESC, r.id DESC`,
+      params
+    );
+
+    return Promise.all(receipts.map(async (r) => {
+      const lines = await this.db.all(
+        `SELECT rl.*, k.naam_kala
+         FROM receipt_lines rl
+         LEFT JOIN kala k ON rl.kala_id = k.kod_kala
+         WHERE rl.receipt_id = ?
+         ORDER BY rl.radif, rl.id`,
+        [r.id]
+      );
+      return { ...r, lines };
+    }));
+  }
+
+  /**
+   * Issues report with their lines, optionally filtered by date range.
+   * @param {Object} [filters] - { from, to } Persian-date bounds (inclusive)
+   * @returns {Promise<Array>} Issue headers each with a `lines` array
+   */
+  async getIssuesReport(filters = {}) {
+    const where = [];
+    const params = [];
+    if (filters.from) { where.push('i.tarikh >= ?'); params.push(filters.from); }
+    if (filters.to) { where.push('i.tarikh <= ?'); params.push(filters.to); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const issues = await this.db.all(
+      `SELECT i.* FROM issues i ${whereSql} ORDER BY i.tarikh DESC, i.id DESC`,
+      params
+    );
+
+    return Promise.all(issues.map(async (i) => {
+      const lines = await this.db.all(
+        `SELECT il.*, k.naam_kala
+         FROM issue_lines il
+         LEFT JOIN kala k ON il.kala_id = k.kod_kala
+         WHERE il.issue_id = ?
+         ORDER BY il.radif, il.id`,
+        [i.id]
+      );
+      return { ...i, lines };
+    }));
+  }
+
+  /**
+   * All-item movement report (flat cardex across every item).
+   * @param {Object} [filters] - { from, to, kala_id }
+   * @returns {Promise<Array>} Movements with item name and direction
+   */
+  async getMovementsReport(filters = {}) {
+    const where = [];
+    const params = [];
+    if (filters.from) { where.push('m.tarikh >= ?'); params.push(filters.from); }
+    if (filters.to) { where.push('m.tarikh <= ?'); params.push(filters.to); }
+    if (filters.kala_id) { where.push('m.kala_id = ?'); params.push(filters.kala_id); }
+    const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
+
+    const movements = await this.db.all(
+      `SELECT m.* FROM (
+         SELECT 'baseline' AS kind, kala_id, tarikh_mabna AS tarikh, '' AS doc_number,
+                mabna_qty AS qty, '' AS party, tavazihat
+         FROM mojoodi_mabna
+         UNION ALL
+         SELECT 'receipt' AS kind, rl.kala_id, r.tarikh, r.receipt_number,
+                rl.maqdar AS qty, '' AS party, rl.tavazihat
+         FROM receipt_lines rl JOIN receipts r ON rl.receipt_id = r.id
+         UNION ALL
+         SELECT 'issue' AS kind, il.kala_id, i.tarikh, i.issue_number,
+                il.maqdar AS qty, i.tahvil_gir AS party, il.tavazihat
+         FROM issue_lines il JOIN issues i ON il.issue_id = i.id
+       ) m ${whereSql}
+       ORDER BY m.tarikh DESC, m.kind DESC`,
+      params
+    );
+
+    // Attach item names in one pass
+    const codes = [...new Set(movements.map((m) => m.kala_id))];
+    const names = new Map();
+    for (const code of codes) {
+      const row = await this.db.get(`SELECT naam_kala FROM kala WHERE kod_kala = ?`, [code]);
+      names.set(code, row?.naam_kala || null);
+    }
+
+    return movements.map((m) => ({
+      ...m,
+      naam_kala: names.get(m.kala_id),
+      direction: m.kind === 'issue' ? -1 : 1,
+    }));
+  }
 }

@@ -28,13 +28,12 @@ export default function Dashboard() {
 
         if (!statsRes.ok) throw new Error('Failed to fetch stats');
 
-        const statsData = await statsRes.json();
-        setStats(statsData);
-
+        setStats(await statsRes.json());
         if (receiptsRes.ok) setRecentReceipts(await receiptsRes.json());
         if (issuesRes.ok) setRecentIssues(await issuesRes.json());
         if (warningsRes.ok) setWarnings(await warningsRes.json());
         if (activityRes.ok) setActivity(await activityRes.json());
+        setError(null);
       } catch (err) {
         console.error('Error fetching dashboard data:', err);
         setError(err.message);
@@ -68,8 +67,8 @@ export default function Dashboard() {
             trend="stable"
           />
           <StatCard
-            title="کالاهای موجود"
-            value={stats?.itemsCount || 0}
+            title="کالاهای دارای موجودی"
+            value={stats?.stockedItems || 0}
             icon="🏷️"
             trend="up"
           />
@@ -82,7 +81,7 @@ export default function Dashboard() {
           />
           <StatCard
             title="تمام‌شده‌ها"
-            value={stats?.completedItems || 0}
+            value={stats?.outOfStockItems || 0}
             icon="✅"
             color="success"
             trend="stable"
@@ -96,16 +95,25 @@ export default function Dashboard() {
         <div className="activity-section">
           <ActivityPanel
             title="آخرین ورودها"
-            data={recentReceipts}
-            columns={['شماره رسید', 'تاریخ', 'کالا', 'مقدار']}
-            rows={recentReceipts.map(r => [r.receipt_num, r.tarikh, r.naam_kala, `${r.maqdar} ${r.vahed}`])}
+            rows={recentReceipts.map(r => [
+              r.receipt_number,
+              r.tarikh,
+              `${r.item_count} قلم`,
+              `${Number(r.total_quantity || 0).toLocaleString('fa-IR')}`,
+            ])}
+            columns={['شماره رسید', 'تاریخ', 'تعداد اقلام', 'مقدار کل']}
           />
 
           <ActivityPanel
             title="آخرین خروج‌ها"
-            data={recentIssues}
-            columns={['شماره حواله', 'تاریخ', 'کالا', 'مقدار', 'تحویل گیرنده']}
-            rows={recentIssues.map(i => [i.issue_num, i.tarikh, i.naam_kala, `${i.maqdar} ${i.vahed}`, i.tahvil_gir])}
+            rows={recentIssues.map(i => [
+              i.issue_number,
+              i.tarikh,
+              `${i.item_count} قلم`,
+              `${Number(i.total_quantity || 0).toLocaleString('fa-IR')}`,
+              i.tahvil_gir || '-',
+            ])}
+            columns={['شماره حواله', 'تاریخ', 'تعداد اقلام', 'مقدار کل', 'تحویل‌گیرنده']}
           />
         </div>
 

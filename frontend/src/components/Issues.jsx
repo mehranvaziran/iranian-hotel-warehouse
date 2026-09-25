@@ -1,32 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import './Issues.css';
 
+const emptyLine = () => ({ kala_id: '', maqdar: '', vahed: '', tavazihat: '' });
+
 export default function Issues() {
   const [issues, setIssues] = useState([]);
+  const [expanded, setExpanded] = useState({});
+  const [issueLines, setIssueLines] = useState({});
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    issue_num: '',
-    tarikh: new Date().toISOString().split('T')[0],
-    kala_id: '',
-    maqdar: '',
-    vahed: '',
-    tahvil_gir: ''
-  });
   const [submitting, setSubmitting] = useState(false);
-  const [selectedItemStock, setSelectedItemStock] = useState(null);
-
-  useEffect(() => {
-    fetchIssues();
-    fetchItems();
-  }, []);
+  const [formError, setFormError] = useState(null);
+  const [formData, setFormData] = useState({
+    issue_number: '',
+    tarikh: new Date().toISOString().split('T')[0],
+    tahvil_gir: '',
+    mahl_masraf: '',
+    tavazihat: '',
+    lines: [emptyLine()]
+  });
 
   const fetchIssues = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3000/api/issues');
+      const response = await fetch('/api/issues');
       if (!response.ok) throw new Error('خطا در دریافت اطلاعات');
       const data = await response.json();
       setIssues(data);
@@ -40,7 +39,7 @@ export default function Issues() {
 
   const fetchItems = async () => {
     try {
-      const response = await fetch('http://localhost:3000/api/items');
+      const response = await fetch('/api/items');
       if (!response.ok) throw new Error('خطا در دریافت کالاها');
       const data = await response.json();
       setItems(data);
@@ -49,40 +48,121 @@ export default function Issues() {
     }
   };
 
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+  useEffect(() => {
+    fetchIssues();
+    fetchItems();
+  }, []);
 
-    if (name === 'kala_id') {
-      const selectedItem = items.find(item => item.kod_kala === value);
-      if (selectedItem) {
-        setFormData(prev => ({ ...prev, vahed: selectedItem.vahed }));
-        setSelectedItemStock(selectedItem.mojoodi_fael);
-      } else {
-        setSelectedItemStock(null);
+  const stockOf = (kodKala) => {
+    const item = items.find(i => i.kod_kala === kodKala);
+    return item ? Number(item.current_stock || 0) : null;
+  };
+
+  const toggleExpand = async (id) => {
+    if (expanded[id]) {
+      setExpanded(prev => ({ ...prev, [id]: false }));
+      return;
+    }
+
+    if (!issueLines[id]) {
+      try {
+        const res = await fetch(`/api/issues/${id}`);
+        if (res.ok) {
+          const data = await res.json();
+          setIssueLines(prev => ({ ...prev, [id]: data.lines || [] }));
+        }
+      } catch (err) {
+        console.error('Error fetching issue lines:', err);
       }
     }
+    setExpanded(prev => ({ ...prev, [id]: true }));
+  };
+
+  const handleHeaderChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleLineChange = (idx, e) => {
+    const { name, value } = e.target;
+    setFormData(prev => {
+      const lines = [...prev.lines];
+      lines[idx] = { ...lines[idx], [name]: value };
+
+      if (name === 'kala_id') {
+        const selected = items.find(i => i.kod_kala === value);
+        if (selected) lines[idx].vahed = selected.vahed;
+      }
+      return { ...prev, lines };
+    });
+  };
+
+  const addLine = () => {
+    setFormData(prev => ({ ...prev, lines: [...prev.lines, emptyLine()] }));
+  };
+
+  const removeLine = (idx) => {
+    setFormData(prev => {
+      if (prev.lines.length === 1) return prev;
+      return { ...prev, lines: prev.lines.filter((_, i) => i !== idx) };
+    });
+  };
+
+  // Aggregate requested qty per item to validate against available stock
+  const requestedTotals = () => {
+    const totals = {};
+    formData.lines.forEach(l => {
+      if (!l.kala_id) return;
+      totals[l.kala_id] = (totals[l.kala_id] || 0) + (Number(l.maqdar) || 0);
+    });
+    return totals;
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!formData.issue_num || !formData.kala_id || !formData.maqdar) {
-      alert('لطفاً تمام فیلدهای ضروری را پر کنید');
+    if (!formData.issue_number || !formData.tarikh) {
+      setFormError('شماره حواله و تاریخ الزامی است');
       return;
     }
 
-    if (selectedItemStock !== null && parseFloat(formData.maqdar) > selectedItemStock) {
-      alert(`موجودی کافی نیست. موجودی فعلی: ${selectedItemStock}`);
+    const validLines = formData.lines.filter(l => l.kala_id && Number(l.maqdar) > 0);
+    if (validLines.length === 0) {
+      setFormError('حداقل یک ردیف معتبر وارد کنید');
       return;
+    }
+
+    // Client-side stock guard (server re-checks authoritatively)
+    const totals = requestedTotals();
+    for (const [kodKala, qty] of Object.entries(totals)) {
+      const stock = stockOf(kodKala);
+      if (stock !== null && qty > stock) {
+        const item = items.find(i => i.kod_kala === kodKala);
+        setFormError(`موجودی ناکافی برای ${item?.naam_kala || kodKala}: درخواست ${qty}، موجودی ${stock}`);
+        return;
+      }
     }
 
     try {
       setSubmitting(true);
-      const response = await fetch('http://localhost:3000/api/issues', {
+      setFormError(null);
+
+      const response = await fetch('/api/issues', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          issue_number: formData.issue_number.trim(),
+          tarikh: formData.tarikh,
+          tahvil_gir: formData.tahvil_gir.trim(),
+          mahl_masraf: formData.mahl_masraf.trim(),
+          tavazihat: formData.tavazihat.trim(),
+          lines: validLines.map(l => ({
+            kala_id: l.kala_id,
+            maqdar: Number(l.maqdar),
+            vahed: l.vahed || '',
+            tavazihat: (l.tavazihat || '').trim()
+          }))
+        })
       });
 
       if (!response.ok) {
@@ -93,17 +173,17 @@ export default function Issues() {
       alert('حواله خروج با موفقیت ثبت شد');
       setShowForm(false);
       setFormData({
-        issue_num: '',
+        issue_number: '',
         tarikh: new Date().toISOString().split('T')[0],
-        kala_id: '',
-        maqdar: '',
-        vahed: '',
-        tahvil_gir: ''
+        tahvil_gir: '',
+        mahl_masraf: '',
+        tavazihat: '',
+        lines: [emptyLine()]
       });
-      setSelectedItemStock(null);
       fetchIssues();
+      fetchItems(); // refresh stock shown in the page
     } catch (err) {
-      alert('خطا: ' + err.message);
+      setFormError(err.message);
     } finally {
       setSubmitting(false);
     }
@@ -117,6 +197,8 @@ export default function Issues() {
     return <div className="error">خطا: {error}</div>;
   }
 
+  const totals = requestedTotals();
+
   return (
     <div className="issues-container">
       <div className="issues-header">
@@ -125,7 +207,7 @@ export default function Issues() {
           <button className="btn-refresh" onClick={fetchIssues}>
             🔄 بروزرسانی
           </button>
-          <button className="btn-new" onClick={() => setShowForm(true)}>
+          <button className="btn-new" onClick={() => { setShowForm(true); setFormError(null); }}>
             + ثبت حواله جدید
           </button>
         </div>
@@ -134,7 +216,13 @@ export default function Issues() {
       <div className="issues-stats">
         <div className="stat-box">
           <div className="stat-label">کل حواله‌ها</div>
-          <div className="stat-value">{issues.length}</div>
+          <div className="stat-value">{issues.length.toLocaleString('fa-IR')}</div>
+        </div>
+        <div className="stat-box">
+          <div className="stat-label">کل اقلام خارج شده</div>
+          <div className="stat-value">
+            {issues.reduce((s, i) => s + Number(i.line_count || 0), 0).toLocaleString('fa-IR')}
+          </div>
         </div>
       </div>
 
@@ -142,26 +230,79 @@ export default function Issues() {
         <table className="issues-table">
           <thead>
             <tr>
+              <th style={{ width: 40 }}></th>
               <th>شماره حواله</th>
               <th>تاریخ</th>
-              <th>کد کالا</th>
-              <th>نام کالا</th>
-              <th>مقدار</th>
-              <th>واحد</th>
-              <th>تحویل گیرنده</th>
+              <th>تحویل‌گیرنده</th>
+              <th>محل مصرف</th>
+              <th>تعداد اقلام</th>
+              <th>مقدار کل</th>
+              <th>چاپ</th>
             </tr>
           </thead>
           <tbody>
             {issues.map((issue) => (
-              <tr key={issue.id}>
-                <td className="issue-num">{issue.issue_num}</td>
-                <td>{issue.tarikh}</td>
-                <td className="kod-kala">{issue.kala_id}</td>
-                <td>{issue.naam_kala}</td>
-                <td className="maqdar">{issue.maqdar}</td>
-                <td>{issue.vahed}</td>
-                <td>{issue.tahvil_gir || '-'}</td>
-              </tr>
+              <React.Fragment key={issue.id}>
+                <tr className={expanded[issue.id] ? 'row-expanded' : ''}>
+                  <td className="expand-cell">
+                    <button
+                      className="btn-expand"
+                      onClick={() => toggleExpand(issue.id)}
+                      aria-label="گسترش ردیف‌ها"
+                    >
+                      {expanded[issue.id] ? '▾' : '▸'}
+                    </button>
+                  </td>
+                  <td className="issue-num">{issue.issue_number}</td>
+                  <td>{issue.tarikh}</td>
+                  <td>{issue.tahvil_gir || '-'}</td>
+                  <td>{issue.mahl_masraf || '-'}</td>
+                  <td>{Number(issue.line_count || 0).toLocaleString('fa-IR')}</td>
+                  <td className="maqdar">{Number(issue.total_quantity || 0).toLocaleString('fa-IR')}</td>
+                  <td>
+                    <button
+                      className="btn-print-row"
+                      onClick={() => window.open(`/api/print/issue/${issue.id}`, '_blank')}
+                    >
+                      🖨️
+                    </button>
+                  </td>
+                </tr>
+                {expanded[issue.id] && (
+                  <tr className="lines-row">
+                    <td colSpan={8}>
+                      {(issueLines[issue.id] || []).length > 0 ? (
+                        <table className="lines-table">
+                          <thead>
+                            <tr>
+                              <th style={{ width: 40 }}>ردیف</th>
+                              <th>کد کالا</th>
+                              <th>نام کالا</th>
+                              <th>مقدار</th>
+                              <th>واحد</th>
+                              <th>توضیحات</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {issueLines[issue.id].map((line, idx) => (
+                              <tr key={line.id || idx}>
+                                <td>{(idx + 1).toLocaleString('fa-IR')}</td>
+                                <td className="kod-kala">{line.kala_id}</td>
+                                <td>{line.naam_kala || '-'}</td>
+                                <td className="maqdar">{Number(line.maqdar).toLocaleString('fa-IR')}</td>
+                                <td>{line.vahed || '-'}</td>
+                                <td>{line.tavazihat || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <div className="lines-loading">در حال بارگذاری ردیف‌ها...</div>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </tbody>
         </table>
@@ -175,95 +316,150 @@ export default function Issues() {
 
       {showForm && (
         <div className="modal-overlay" onClick={() => setShowForm(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+          <div className="modal-content modal-wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h2>ثبت حواله خروج جدید</h2>
               <button className="btn-close" onClick={() => setShowForm(false)}>×</button>
             </div>
             <form onSubmit={handleSubmit}>
               <div className="modal-body">
-                <div className="form-group">
-                  <label>شماره حواله *</label>
-                  <input
-                    type="text"
-                    name="issue_num"
-                    value={formData.issue_num}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="مثال: I-001"
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>تاریخ *</label>
-                  <input
-                    type="date"
-                    name="tarikh"
-                    value={formData.tarikh}
-                    onChange={handleInputChange}
-                    required
-                  />
-                </div>
-
-                <div className="form-group">
-                  <label>کالا *</label>
-                  <select
-                    name="kala_id"
-                    value={formData.kala_id}
-                    onChange={handleInputChange}
-                    required
-                  >
-                    <option value="">انتخاب کنید</option>
-                    {items.map(item => (
-                      <option key={item.kod_kala} value={item.kod_kala}>
-                        {item.kod_kala} - {item.naam_kala} (موجودی: {item.mojoodi_fael})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {selectedItemStock !== null && (
-                  <div className="stock-info">
-                    موجودی فعلی: <strong>{selectedItemStock}</strong> {formData.vahed}
-                  </div>
-                )}
+                {formError && <div className="form-error">{formError}</div>}
 
                 <div className="form-row">
                   <div className="form-group">
-                    <label>مقدار *</label>
+                    <label>شماره حواله *</label>
                     <input
-                      type="number"
-                      name="maqdar"
-                      value={formData.maqdar}
-                      onChange={handleInputChange}
+                      type="text"
+                      name="issue_number"
+                      value={formData.issue_number}
+                      onChange={handleHeaderChange}
                       required
-                      min="0"
-                      step="0.01"
-                      max={selectedItemStock || undefined}
+                      placeholder="مثال: H-050701-001"
                     />
                   </div>
 
                   <div className="form-group">
-                    <label>واحد</label>
+                    <label>تاریخ *</label>
+                    <input
+                      type="date"
+                      name="tarikh"
+                      value={formData.tarikh}
+                      onChange={handleHeaderChange}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>تحویل‌گیرنده</label>
                     <input
                       type="text"
-                      name="vahed"
-                      value={formData.vahed}
-                      onChange={handleInputChange}
-                      readOnly
+                      name="tahvil_gir"
+                      value={formData.tahvil_gir}
+                      onChange={handleHeaderChange}
+                      placeholder="نام تحویل‌گیرنده"
+                    />
+                  </div>
+
+                  <div className="form-group">
+                    <label>محل مصرف</label>
+                    <input
+                      type="text"
+                      name="mahl_masraf"
+                      value={formData.mahl_masraf}
+                      onChange={handleHeaderChange}
+                      placeholder="محل مصرف"
                     />
                   </div>
                 </div>
 
                 <div className="form-group">
-                  <label>تحویل گیرنده</label>
+                  <label>توضیحات</label>
                   <input
                     type="text"
-                    name="tahvil_gir"
-                    value={formData.tahvil_gir}
-                    onChange={handleInputChange}
-                    placeholder="نام تحویل گیرنده"
+                    name="tavazihat"
+                    value={formData.tavazihat}
+                    onChange={handleHeaderChange}
+                    placeholder="توضیحات سند"
                   />
+                </div>
+
+                <div className="lines-section">
+                  <div className="lines-section-header">
+                    <h3>ردیف‌های حواله</h3>
+                    <button type="button" className="btn-add-line" onClick={addLine}>
+                      + افزودن ردیف
+                    </button>
+                  </div>
+
+                  {formData.lines.map((line, idx) => {
+                    const stock = stockOf(line.kala_id);
+                    const requested = totals[line.kala_id] || 0;
+                    const overLimit = stock !== null && requested > stock;
+
+                    return (
+                      <div key={idx} className="line-row">
+                        <div className="line-idx">{(idx + 1).toLocaleString('fa-IR')}</div>
+                        <div className="line-fields">
+                          <select
+                            name="kala_id"
+                            value={line.kala_id}
+                            onChange={(e) => handleLineChange(idx, e)}
+                            required
+                          >
+                            <option value="">انتخاب کالا</option>
+                            {items.map(item => (
+                              <option key={item.kod_kala} value={item.kod_kala}>
+                                {item.kod_kala} - {item.naam_kala} (موجودی: {Number(item.current_stock || 0).toLocaleString('fa-IR')})
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            type="number"
+                            name="maqdar"
+                            value={line.maqdar}
+                            onChange={(e) => handleLineChange(idx, e)}
+                            placeholder="مقدار"
+                            min="0"
+                            step="0.01"
+                            required
+                            className={overLimit ? 'input-error' : ''}
+                          />
+                          <input
+                            type="text"
+                            name="vahed"
+                            value={line.vahed}
+                            onChange={(e) => handleLineChange(idx, e)}
+                            placeholder="واحد"
+                          />
+                          <input
+                            type="text"
+                            name="tavazihat"
+                            value={line.tavazihat}
+                            onChange={(e) => handleLineChange(idx, e)}
+                            placeholder="توضیحات ردیف"
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="btn-remove-line"
+                          onClick={() => removeLine(idx)}
+                          disabled={formData.lines.length === 1}
+                          aria-label="حذف ردیف"
+                        >
+                          ×
+                        </button>
+                        {line.kala_id && (
+                          <div className={`line-stock ${overLimit ? 'stock-over' : ''}`}>
+                            {overLimit
+                              ? `بیش از موجودی (${requested}/${stock})`
+                              : `موجودی: ${Number(stock).toLocaleString('fa-IR')} ${line.vahed}`}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

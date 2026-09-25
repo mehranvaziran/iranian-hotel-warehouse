@@ -15,7 +15,7 @@ export default function Inventory() {
   const fetchInventory = async () => {
     try {
       setLoading(true);
-      const response = await fetch('http://localhost:3000/api/inventory');
+      const response = await fetch('/api/inventory');
       if (!response.ok) throw new Error('خطا در دریافت اطلاعات');
       const data = await response.json();
       setInventory(data);
@@ -38,9 +38,9 @@ export default function Inventory() {
   });
 
   const getStatusBadge = (item) => {
-    if (item.mojoodi_fael === 0) {
+    if (Number(item.current_stock) === 0) {
       return <span className="status-badge status-empty">تمام شده</span>;
-    } else if (item.mojoodi_fael < item.hadd_aqal_mojoodi) {
+    } else if (Number(item.current_stock) < Number(item.hadd_aqal_mojoodi)) {
       return <span className="status-badge status-low">زیر حد مجاز</span>;
     } else {
       return <span className="status-badge status-ok">موجود</span>;
@@ -88,24 +88,24 @@ export default function Inventory() {
       <div className="inventory-stats">
         <div className="stat-card">
           <div className="stat-label">کل کالاها</div>
-          <div className="stat-value">{filteredInventory.length}</div>
+          <div className="stat-value">{filteredInventory.length.toLocaleString('fa-IR')}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">موجود</div>
           <div className="stat-value">
-            {filteredInventory.filter(i => i.mojoodi_fael > 0).length}
+            {filteredInventory.filter(i => Number(i.current_stock) > 0).length.toLocaleString('fa-IR')}
           </div>
         </div>
         <div className="stat-card warning">
           <div className="stat-label">زیر حد مجاز</div>
           <div className="stat-value">
-            {filteredInventory.filter(i => i.mojoodi_fael < i.hadd_aqal_mojoodi && i.mojoodi_fael > 0).length}
+            {filteredInventory.filter(i => Number(i.current_stock) > 0 && Number(i.current_stock) < Number(i.hadd_aqal_mojoodi)).length.toLocaleString('fa-IR')}
           </div>
         </div>
         <div className="stat-card danger">
           <div className="stat-label">تمام شده</div>
           <div className="stat-value">
-            {filteredInventory.filter(i => i.mojoodi_fael === 0).length}
+            {filteredInventory.filter(i => Number(i.current_stock) === 0).length.toLocaleString('fa-IR')}
           </div>
         </div>
       </div>
@@ -128,16 +128,16 @@ export default function Inventory() {
           </thead>
           <tbody>
             {filteredInventory.map((item) => (
-              <tr key={item.kod_kala} className={item.mojoodi_fael < item.hadd_aqal_mojoodi ? 'row-warning' : ''}>
+              <tr key={item.kod_kala} className={Number(item.current_stock) < Number(item.hadd_aqal_mojoodi) ? 'row-warning' : ''}>
                 <td className="kod-kala">{item.kod_kala}</td>
                 <td className="naam-kala">{item.naam_kala}</td>
                 <td>{item.goh}</td>
                 <td>{item.zirgoh || '-'}</td>
-                <td className="mojoodi">{item.mojoodi_fael}</td>
-                <td>{item.hadd_aqal_mojoodi}</td>
+                <td className="mojoodi">{Number(item.current_stock).toLocaleString('fa-IR')}</td>
+                <td>{Number(item.hadd_aqal_mojoodi).toLocaleString('fa-IR')}</td>
                 <td>{item.vahed}</td>
-                <td>{item.total_receipts}</td>
-                <td>{item.total_issues}</td>
+                <td>{Number(item.total_receipts).toLocaleString('fa-IR')}</td>
+                <td>{Number(item.total_issues).toLocaleString('fa-IR')}</td>
                 <td>{getStatusBadge(item)}</td>
               </tr>
             ))}
