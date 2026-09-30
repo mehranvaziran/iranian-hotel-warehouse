@@ -298,6 +298,7 @@ tr.row-inactive td {
 .btn-cardex,
 .btn-edit,
 .btn-delete,
+.btn-reactivate,
 .btn-suggest {
   padding: 5px 12px;
   border: none;
@@ -315,6 +316,9 @@ tr.row-inactive td {
 
 .btn-delete { background: #e74c3c; color: white; }
 .btn-delete:hover { background: #c0392b; }
+
+.btn-reactivate { background: #27ae60; color: white; }
+.btn-reactivate:hover { background: #1e8449; }
 
 .btn-suggest {
   background: #f0f0f0;

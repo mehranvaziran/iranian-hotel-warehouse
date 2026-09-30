@@ -119,12 +119,22 @@ export default function Items() {
       const payload = {
         kod_kala: formData.kod_kala.trim(),
         naam_kala: formData.naam_kala.trim(),
-        goh: formData.goh.trim(),
         zirgoh: formData.zirgoh.trim(),
-        vahed: formData.vahed.trim(),
         hadd_aqal_mojoodi: Number(formData.hadd_aqal_mojoodi) || 0,
         tavazihat: formData.tavazihat.trim()
       };
+
+      if (editingItem) {
+        // Group and unit are locked once an item exists — they identify it in
+        // every document, and the unit is what document lines store. The backend
+        // enforces this too; sending them unchanged would also pass, but sending
+        // the editable fields only keeps a stale form from re-submitting a
+        // locked one.
+        payload.is_active = editingItem.is_active === 0 ? 0 : 1;
+      } else {
+        payload.goh = formData.goh.trim();
+        payload.vahed = formData.vahed.trim();
+      }
 
       const isEditing = !!editingItem;
       const response = await fetch(
@@ -170,6 +180,35 @@ export default function Items() {
 
       const result = await response.json();
       alert(result.message);
+      fetchItems();
+    } catch (err) {
+      alert('خطا: ' + err.message);
+    }
+  };
+
+  // An item is retired by deactivation, not deletion, so it keeps its stock and
+  // history. Re-enabling it puts it back in the catalog for new documents.
+  const handleReactivate = async (item) => {
+    if (!window.confirm(`این کالا مجدداً فعال شود؟\nکد: ${item.kod_kala} - ${item.naam_kala}`)) return;
+
+    try {
+      const response = await fetch(`/api/items/${encodeURIComponent(item.kod_kala)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          naam_kala: item.naam_kala,
+          zirgoh: item.zirgoh || '',
+          hadd_aqal_mojoodi: item.hadd_aqal_mojoodi || 0,
+          tavazihat: item.tavazihat || '',
+          is_active: 1,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'خطا در فعال‌سازی کالا');
+      }
+
       fetchItems();
     } catch (err) {
       alert('خطا: ' + err.message);
@@ -327,6 +366,11 @@ export default function Items() {
                     <button className="btn-cardex" onClick={() => handleViewCardex(item)}>
                       کارتکس
                     </button>
+                    {item.is_active === 0 && (
+                      <button className="btn-reactivate" onClick={() => handleReactivate(item)}>
+                        فعال‌سازی
+                      </button>
+                    )}
                     <button className="btn-edit" onClick={() => openEditForm(item)}>
                       ویرایش
                     </button>
@@ -539,13 +583,14 @@ export default function Items() {
 
                 <div className="form-row">
                   <div className="form-group">
-                    <label>گروه</label>
+                    <label>گروه {editingItem && '(غیرقابل تغییر)'}</label>
                     <input
                       type="text"
                       name="goh"
                       value={formData.goh}
                       onChange={handleInputChange}
                       placeholder="مثال: کناف"
+                      disabled={!!editingItem}
                     />
                   </div>
 
@@ -563,13 +608,14 @@ export default function Items() {
 
                 <div className="form-row">
                   <div className="form-group">
-                    <label>واحد</label>
+                    <label>واحد {editingItem && '(غیرقابل تغییر)'}</label>
                     <input
                       type="text"
                       name="vahed"
                       value={formData.vahed}
                       onChange={handleInputChange}
                       placeholder="مثال: شاخه"
+                      disabled={!!editingItem}
                     />
                   </div>
 

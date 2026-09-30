@@ -58,15 +58,39 @@ export function todayJalali() {
   return `${jy}/${pad(jm)}/${pad(jd)}`;
 }
 
+/**
+ * Jalali leap years follow the 33-year arithmetic cycle the conversion above is
+ * built on — the same rule the backend validates against, so a date the client
+ * accepts is a date the API accepts.
+ */
+const LEAP_YEAR_REMAINDERS = new Set([1, 5, 9, 13, 17, 22, 26, 30]);
+
+export function isJalaliLeapYear(jy) {
+  return LEAP_YEAR_REMAINDERS.has(((jy % 33) + 33) % 33);
+}
+
+/** Days in a Jalali month: 1–6 → 31, 7–11 → 30, Esfand → 29 (30 in a leap year). */
+export function jalaliMonthLength(jy, jm) {
+  if (jm >= 1 && jm <= 6) return 31;
+  if (jm >= 7 && jm <= 11) return 30;
+  return isJalaliLeapYear(jy) ? 30 : 29;
+}
+
 const JALALI_DATE_RE = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/;
 
-/** True when `value` looks like a Jalali date in `YYYY/MM/DD` form. */
+/**
+ * True when `value` is a Jalali date in `YYYY/MM/DD` form with a month and day
+ * that can actually occur — including the Esfand leap day.
+ */
 export function isValidJalaliDate(value) {
   const m = String(value ?? '').trim().match(JALALI_DATE_RE);
   if (!m) return false;
+  const year = Number(m[1]);
   const month = Number(m[2]);
   const day = Number(m[3]);
-  return month >= 1 && month <= 12 && day >= 1 && day <= 31;
+  return year >= 1300 && year <= 1500 &&
+    month >= 1 && month <= 12 &&
+    day >= 1 && day <= jalaliMonthLength(year, month);
 }
 
 /**
