@@ -603,37 +603,37 @@ ${colors.reset}`);
     assertEquals(Number(after.current_stock), Number(before.current_stock), 'Stock must be unchanged after rejection');
   });
 
-  await test('Concurrent issues cannot both spend the same stock', async () => {
-    // Two documents submitted at once, each asking for just over half the
-    // available stock. Only one may succeed; the other must be rejected and
-    // leave the balance intact.
+  await test('Concurrent issues are serialised by the service layer', async () => {
+    // The genuine race — two independent connections hitting the same stock at
+    // the same instant — is exercised in backend/tests/concurrency.test.js with
+    // two worker threads and an atomic rendezvous barrier. Over a single
+    // HTTP connection, `Promise.all` only interleaves I/O on one event loop and
+    // proves nothing about the lock, so this suite no longer pretends to.
+    //
+    // What this test can still check is the contract a retrying client relies
+    // on: an issue that cannot be covered is refused with 400, and the stock it
+    // would have spent is untouched.
     const before = await getItem(testCode);
-    const half = Math.floor(Number(before.current_stock) / 2);
-    const ask = half + 1;
-    if (ask < 1) return; // not enough stock to exercise this case
+    const ask = Number(before.current_stock) + 1000;
 
-    const [a, b] = await Promise.all([
-      postJSON('/issues', {
-        issue_number: `TEST-C1-${Date.now()}`,
-        tarikh: '1405/07/04',
-        lines: [{ kala_id: testCode, maqdar: ask, vahed: 'عدد' }],
-      }),
-      postJSON('/issues', {
-        issue_number: `TEST-C2-${Date.now() + 1}`,
-        tarikh: '1405/07/04',
-        lines: [{ kala_id: testCode, maqdar: ask, vahed: 'عدد' }],
-      }),
-    ]);
+    const { ok, status, data } = await postJSON('/issues', {
+      issue_number: `TEST-C1-${Date.now()}`,
+      tarikh: '1405/07/04',
+      lines: [{ kala_id: testCode, maqdar: ask, vahed: 'عدد' }],
+    });
 
-    const successes = [a, b].filter((r) => r.ok);
-    for (const s of successes) created.issues.push(s.data.id);
-    assertEquals(successes.length, 1, `Exactly one concurrent issue must succeed (got ${successes.length})`);
+    assertFalse(ok, 'An over-committed issue must be refused');
+    assertEquals(status, 400, 'Should return insufficient inventory error');
+    assertTrue(
+      String(data.error).includes('ناکافی'),
+      `The refusal should say why in Persian, got: ${data.error}`
+    );
 
     const after = await getItem(testCode);
     assertApproxEquals(
       Number(after.current_stock),
-      Number(before.current_stock) - ask,
-      'Stock must drop by exactly one document'
+      Number(before.current_stock),
+      'Stock must be unchanged after rejection'
     );
   });
 
@@ -734,6 +734,213 @@ ${colors.reset}`);
     ]);
     assertTrue(!active.some((i) => i.kod_kala === code), 'Deactivated item must not appear in active list');
     assertTrue(all.some((i) => i.kod_kala === code && i.is_active === 0), 'Deactivated item must appear with flag');
+  });
+
+  // ------------------------------------------------------------------
+  // Hardening: authoritative units, immutable keys, retired items, dates
+  // ------------------------------------------------------------------
+
+  await test('Document lines take their unit from the item master', async () => {
+    // The unit on a movement line belongs to the item definition, not to
+    // whoever submitted the document. A client sending a different unit must be
+    // ignored rather than recorded — otherwise the catalog and the movement
+    // history can disagree about how an item is counted.
+    const code = `Z${Date.now().toString().slice(-6)}`;
+    await postJSON('/items', {
+      kod_kala: code,
+      naam_kala: 'کالای با واحد کیلوگرم',
+      vahed: 'کیلوگرم',
+    });
+    created.items.push(code);
+
+    const receipt = await postJSON('/receipts', {
+      receipt_number: `TEST-U-${Date.now()}`,
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: code, maqdar: 10, vahed: 'واحد تقلبی' }],
+    });
+    assertTrue(receipt.ok, `Receipt should be accepted, got: ${JSON.stringify(receipt.data)}`);
+    created.receipts.push(receipt.data.id);
+
+    const receiptDetail = await fetchJSON(`/receipts/${receipt.data.id}`);
+    assertEquals(
+      receiptDetail.lines[0].vahed,
+      'کیلوگرم',
+      'The stored receipt line must carry the item master unit'
+    );
+
+    const issue = await postJSON('/issues', {
+      issue_number: `TEST-U2-${Date.now()}`,
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: code, maqdar: 4, vahed: 'واحد تقلبی' }],
+    });
+    assertTrue(issue.ok, `Issue should be accepted, got: ${JSON.stringify(issue.data)}`);
+    created.issues.push(issue.data.id);
+
+    const issueDetail = await fetchJSON(`/issues/${issue.data.id}`);
+    assertEquals(
+      issueDetail.lines[0].vahed,
+      'کیلوگرم',
+      'The stored issue line must carry the item master unit'
+    );
+  });
+
+  await test('Group cannot be changed after creation', async () => {
+    const code = `Z${Date.now().toString().slice(-6)}`;
+    await postJSON('/items', {
+      kod_kala: code,
+      naam_kala: 'کالای گروه و واحد قفل',
+      goh: 'گروه الف',
+      vahed: 'عدد',
+    });
+    created.items.push(code);
+
+    const res = await request(`/items/${code}`, {
+      method: 'PUT',
+      body: JSON.stringify({ naam_kala: 'کالای گروه و واحد قفل', goh: 'گروه متفاوت' }),
+    });
+    assertFalse(res.ok, 'Changing the group must be refused');
+    assertEquals(res.status, 400, 'Refusal must be a client error');
+
+    const after = await getItem(code, true);
+    assertEquals(after.goh, 'گروه الف', 'The group must be unchanged');
+  });
+
+  await test('Unit cannot be changed after creation', async () => {
+    const code = `Z${Date.now().toString().slice(-6)}`;
+    await postJSON('/items', {
+      kod_kala: code,
+      naam_kala: 'کالای گروه و واحد قفل',
+      goh: 'گروه الف',
+      vahed: 'عدد',
+    });
+    created.items.push(code);
+
+    const res = await request(`/items/${code}`, {
+      method: 'PUT',
+      body: JSON.stringify({ naam_kala: 'کالای گروه و واحد قفل', vahed: 'متر' }),
+    });
+    assertFalse(res.ok, 'Changing the unit must be refused');
+    assertEquals(res.status, 400, 'Refusal must be a client error');
+
+    const after = await getItem(code, true);
+    assertEquals(after.vahed, 'عدد', 'The unit must be unchanged');
+  });
+
+  await test('An edit that omits group and unit keeps both', async () => {
+    // The edit form only sends the fields it actually edits. Omitting the
+    // locked fields must not wipe them.
+    const code = `Z${Date.now().toString().slice(-6)}`;
+    await postJSON('/items', {
+      kod_kala: code,
+      naam_kala: 'کالای ویرایش جزئی',
+      goh: 'گروه الف',
+      vahed: 'کیلوگرم',
+    });
+    created.items.push(code);
+
+    await sendJSON(`/items/${code}`, 'PUT', {
+      naam_kala: 'کالای ویرایش جزئی - ویرایش شده',
+      zirgoh: 'زیرگروه',
+      hadd_aqal_mojoodi: 7,
+      tavazihat: 'فقط فیلدهای قابل ویرایش',
+    });
+    const after = await getItem(code, true);
+    assertEquals(after.naam_kala, 'کالای ویرایش جزئی - ویرایش شده', 'The editable name should change');
+    assertEquals(after.goh, 'گروه الف', 'The omitted group should be kept');
+    assertEquals(after.vahed, 'کیلوگرم', 'The omitted unit should be kept');
+  });
+
+  await test('A retired item is refused by new receipts and issues', async () => {
+    // A retired item keeps its place in inventory and history, but it must not
+    // be able to move again.
+    const code = `Z${Date.now().toString().slice(-6)}`;
+    await postJSON('/items', { kod_kala: code, naam_kala: 'کالای بازنشسته', vahed: 'عدد' });
+    created.items.push(code);
+
+    const receipt = await postJSON('/receipts', {
+      receipt_number: `TEST-Ret-${Date.now()}`,
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: code, maqdar: 20, vahed: 'عدد' }],
+    });
+    assertTrue(receipt.ok, `The item should be able to receive stock while active, got: ${JSON.stringify(receipt.data)}`);
+    created.receipts.push(receipt.data.id);
+
+    await sendJSON(`/items/${code}`, 'DELETE');
+    const retired = await getItem(code, true);
+    assertEquals(retired.is_active, 0, 'The item should now be retired');
+
+    const blockedReceipt = await postJSON('/receipts', {
+      receipt_number: `TEST-Ret2-${Date.now()}`,
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: code, maqdar: 5, vahed: 'عدد' }],
+    });
+    assertFalse(blockedReceipt.ok, 'A retired item must not be receivable');
+    assertEquals(blockedReceipt.status, 400, 'Refusal must be a client error');
+    assertTrue(
+      String(blockedReceipt.data.error).includes('غیرفعال'),
+      `The refusal should name retirement in Persian, got: ${blockedReceipt.data.error}`
+    );
+
+    const blockedIssue = await postJSON('/issues', {
+      issue_number: `TEST-Ret3-${Date.now()}`,
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: code, maqdar: 5, vahed: 'عدد' }],
+    });
+    assertFalse(blockedIssue.ok, 'A retired item must not be issuable');
+    assertEquals(blockedIssue.status, 400, 'Refusal must be a client error');
+    assertTrue(
+      String(blockedIssue.data.error).includes('غیرفعال'),
+      `The refusal should name retirement in Persian, got: ${blockedIssue.data.error}`
+    );
+
+    const unchanged = await getItem(code, true);
+    assertEquals(
+      Number(unchanged.current_stock),
+      20,
+      'Neither refused document may have changed the stock'
+    );
+  });
+
+  await test('Jalali month boundaries are enforced at the API', async () => {
+    // Real calendar arithmetic, not a shape check: Shahrivar 31st is a real day,
+    // Mehr 31st is not, and Esfand 30th only exists in a leap year.
+    const code = `Z${Date.now().toString().slice(-6)}`;
+    await postJSON('/items', { kod_kala: code, naam_kala: 'کالای آزمون تاریخ', vahed: 'عدد' });
+    created.items.push(code);
+
+    const cases = [
+      ['1405/06/31', true, 'Shahrivar has 31 days'],
+      ['1405/07/01', true, 'The first day of Mehr is valid'],
+      ['1405/07/30', true, 'Mehrs last day is the 30th'],
+      ['1405/07/31', false, 'A 30-day month has no 31st day'],
+      ['1405/12/29', true, 'Esfand 29 is always valid'],
+      ['1405/12/30', false, '1405 is not a leap year, so Esfand has no 30th'],
+      ['1403/12/30', true, '1403 is a leap year, so Esfand 30 exists'],
+      ['1405/13/01', false, 'There is no thirteenth month'],
+      ['1405/06/32', false, 'No month has 32 days'],
+      ['2026-09-30', false, 'A Gregorian date must not be accepted'],
+      ['1405/7/1', false, 'The canonical form is zero-padded'],
+    ];
+
+    for (const [tarikh, shouldAccept, why] of cases) {
+      const res = await postJSON('/receipts', {
+        receipt_number: `TEST-D-${tarikh.replace(/\//g, '-')}-${Date.now()}`,
+        tarikh,
+        lines: [{ kala_id: code, maqdar: 1, vahed: 'عدد' }],
+      });
+      if (shouldAccept) {
+        assertTrue(res.ok, `${why} — expected acceptance, got: ${JSON.stringify(res.data)}`);
+        created.receipts.push(res.data.id);
+      } else {
+        assertFalse(res.ok, `${why} — expected rejection, got: ${JSON.stringify(res.data)}`);
+        assertEquals(res.status, 400, `${why} — refusal must be a client error`);
+      }
+    }
+
+    // Every accepted document must actually have been stored with its date.
+    const receipts = await fetchJSON('/receipts');
+    const mine = receipts.filter((r) => r.receipt_number.startsWith('TEST-D-'));
+    assertEquals(mine.length, 5, 'Exactly the five valid dates must have been stored');
   });
 
   // ------------------------------------------------------------------
