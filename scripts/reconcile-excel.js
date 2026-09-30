@@ -13,6 +13,10 @@
  * from `warehouse-source.xlsx`, reports the differences against the current
  * JSON seed, and — with `--write` — rewrites the seed to match the Excel.
  *
+ * The workbook is opened with a pure-JavaScript ZIP reader (scripts/lib/zip-extract.js)
+ * rather than an external `unzip` executable, so it runs on a stock Windows
+ * install with no extra tooling.
+ *
  * Usage:
  *   node scripts/reconcile-excel.js            # report only
  *   node scripts/reconcile-excel.js --write    # update the JSON seed
@@ -20,21 +24,20 @@
 
 import fs from 'fs';
 import path from 'path';
-import os from 'os';
-import { execSync } from 'child_process';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import { extractZipToDir } from './lib/zip-extract.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(__dirname, '..');
-const EXCEL_PATH = path.join(ROOT, 'warehouse-source.xlsx');
-const JSON_PATH = path.join(ROOT, 'backend', 'data', 'real-warehouse-data.json');
+const DEFAULT_EXCEL_PATH = path.join(ROOT, 'warehouse-source.xlsx');
+const DEFAULT_JSON_PATH = path.join(ROOT, 'backend', 'data', 'real-warehouse-data.json');
 
 // ---------------------------------------------------------------- worksheet IO
 
 function unzipExcel(xlsxPath) {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'warehouse-excel-'));
-  execSync(`unzip -q -o "${xlsxPath}" -d "${tempDir}"`);
-  return tempDir;
+  // Read the .xlsx as a ZIP archive in-process; the reader throws a clear error
+  // when the file is not one, instead of failing on a missing `unzip` binary.
+  return extractZipToDir(xlsxPath);
 }
 
 function readSharedStrings(dir) {
@@ -120,7 +123,7 @@ const toJalaliDate = (v) => {
   return `${m[1]}/${m[2].padStart(2, '0')}/${m[3].padStart(2, '0')}`;
 };
 
-function buildCanonicalData(dir) {
+function buildCanonicalData(dir, excelPath) {
   const sharedStrings = readSharedStrings(dir);
 
   const rawItems = readTable(dir, 'sheet1.xml', sharedStrings, {
@@ -202,7 +205,7 @@ function buildCanonicalData(dir) {
     baseline,
     metadata: {
       extracted_at: new Date().toISOString(),
-      source_file: path.basename(EXCEL_PATH),
+      source_file: path.basename(excelPath),
       total_items: items.length,
       total_receipts: receipts.length,
       total_issues: issues.length,
@@ -261,19 +264,36 @@ function diffSection(name, currentRows, canonicalRows, keyFn) {
   return notes;
 }
 
-function reconcile() {
-  if (!fs.existsSync(EXCEL_PATH)) {
-    throw new Error(`Excel source not found: ${EXCEL_PATH}`);
+/**
+ * Rebuild the canonical dataset from the workbook and diff it against the seed.
+ *
+ * @param {Object} [opts]
+ * @param {string} [opts.excelPath] - Workbook to read; defaults to the checked-in source.
+ * @param {string} [opts.jsonPath] - Seed to compare against; defaults to the backend seed.
+ * @param {boolean} [opts.write] - Overwrite the seed with the canonical data.
+ * @returns {Object|null} The canonical data, or null when it already matches.
+ */
+export function reconcile({ excelPath = DEFAULT_EXCEL_PATH, jsonPath = DEFAULT_JSON_PATH, write = false } = {}) {
+  if (!fs.existsSync(excelPath)) {
+    throw new Error(`Excel source not found: ${excelPath}`);
   }
 
-  const dir = unzipExcel(EXCEL_PATH);
+  let dir;
   try {
-    const canonical = buildCanonicalData(dir);
-    const current = JSON.parse(fs.readFileSync(JSON_PATH, 'utf-8'));
+    // A workbook that is not a readable archive should say so plainly rather
+    // than fail on a missing tool or a cryptic zlib code.
+    dir = unzipExcel(excelPath);
+  } catch (err) {
+    throw new Error(`Could not read the Excel workbook ${path.basename(excelPath)}: ${err.message}`);
+  }
+
+  try {
+    const canonical = buildCanonicalData(dir, excelPath);
+    const current = JSON.parse(fs.readFileSync(jsonPath, 'utf-8'));
 
     console.log('\n╔════════════════════════════════════════════════════════════╗');
     console.log('║   Excel ↔ JSON seed reconciliation                          ║');
-    console.log(`║   source: ${path.basename(EXCEL_PATH).padEnd(45)}║`);
+    console.log(`║   source: ${path.basename(excelPath).padEnd(45)}║`);
     console.log('╚════════════════════════════════════════════════════════════╝\n');
 
     console.log(`Excel : ${canonical.items.length} items, ${canonical.receipts.length} receipt lines,` +
@@ -300,9 +320,9 @@ function reconcile() {
     allNotes.forEach((n) => console.log(n));
     console.log();
 
-    if (process.argv.includes('--write')) {
-      fs.writeFileSync(JSON_PATH, JSON.stringify(canonical, null, 2) + '\n', 'utf-8');
-      console.log(`✅ Wrote reconciled seed to ${path.relative(ROOT, JSON_PATH)}\n`);
+    if (write) {
+      fs.writeFileSync(jsonPath, JSON.stringify(canonical, null, 2) + '\n', 'utf-8');
+      console.log(`✅ Wrote reconciled seed to ${path.relative(ROOT, jsonPath)}\n`);
     } else {
       console.log('Dry run — no files written. Pass --write to update the seed.\n');
     }
@@ -312,22 +332,49 @@ function reconcile() {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 }
+/**
+ * Fail loudly if the canonical data does not satisfy the core invariant the
+ * rest of the system depends on: baseline + receipts - issues must be >= 0 for
+ * every item (an issue cannot consume stock that was never there).
+ *
+ * Exported so a caller can check a candidate seed without running the CLI.
+ */
+export function assertNonNegativeStock(canonical) {
+  const stock = new Map();
+  for (const b of canonical.baseline) stock.set(b.kala_id, (stock.get(b.kala_id) || 0) + b.mabna_qty);
+  for (const r of canonical.receipts) stock.set(r.kala_id, (stock.get(r.kala_id) || 0) + r.maqdar);
+  for (const i of canonical.issues) stock.set(i.kala_id, (stock.get(i.kala_id) || 0) - i.maqdar);
 
-const result = reconcile();
-if (!result) process.exit(0);
+  const negative = [...stock.entries()].filter(([, q]) => q < 0);
+  if (negative.length) {
+    throw new Error(
+      'Invariant violated — these items would have negative stock: ' +
+      negative.map(([code, q]) => `${code}: ${q}`).join(', ')
+    );
+  }
 
-// Fail loudly if the canonical data does not satisfy the core invariant the
-// rest of the system depends on: baseline + receipts - issues must be >= 0 for
-// every item (an issue cannot consume stock that was never there).
-const stock = new Map();
-for (const b of result.baseline) stock.set(b.kala_id, (stock.get(b.kala_id) || 0) + b.mabna_qty);
-for (const r of result.receipts) stock.set(r.kala_id, (stock.get(r.kala_id) || 0) + r.maqdar);
-for (const i of result.issues) stock.set(i.kala_id, (stock.get(i.kala_id) || 0) - i.maqdar);
-const negative = [...stock.entries()].filter(([, q]) => q < 0);
-if (negative.length) {
-  console.error('❌ Invariant violated — these items would have negative stock:');
-  negative.forEach(([code, q]) => console.error(`   ${code}: ${q}`));
-  process.exit(1);
+  console.log(`✅ Invariant ok: all ${stock.size} items have non-negative stock` +
+    ` (total ${[...stock.values()].reduce((a, b) => a + b, 0)})`);
 }
-console.log(`✅ Invariant ok: all ${stock.size} items have non-negative stock` +
-  ` (total ${[...stock.values()].reduce((a, b) => a + b, 0)})`);
+
+// --------------------------------------------------------------------------- CLI
+
+// `process.argv[1]` may be relative on the command line, so resolve it before
+// turning it into a URL.
+const isCli = import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+
+if (isCli) {
+  try {
+    // An optional positional argument names the workbook, so a broken or
+    // experimental file can be checked without overwriting the checked-in one.
+    const positional = process.argv.slice(2).find((a) => !a.startsWith('--'));
+    const result = reconcile({
+      excelPath: positional,
+      write: process.argv.includes('--write'),
+    });
+    if (result) assertNonNegativeStock(result);
+  } catch (err) {
+    console.error(`❌ ${err.message}`);
+    process.exit(1);
+  }
+}
