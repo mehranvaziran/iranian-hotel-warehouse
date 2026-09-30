@@ -5,10 +5,26 @@
  * Validates the derived-inventory invariants:
  *   current_stock = baseline + receipts - issues
  *
- * All documents/Items created by this suite are cleaned up at the end.
+ * Isolation: the suite spawns its own server against a throwaway database in
+ * the OS temp dir and tears it down afterwards. It never touches the live
+ * data/warehouse.db — that lack of isolation is what previously destroyed real
+ * documents in the development database.
+ *
+ * Run:  node tests/api-test.js
  */
 
-const BASE_URL = 'http://localhost:3000/api';
+import { spawn } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const ROOT = path.join(__dirname, '..');
+const BACKEND_DIR = path.join(ROOT, 'backend');
+
+const TEST_PORT = '3999';
+const BASE_URL = `http://localhost:${TEST_PORT}/api`;
 
 // Color codes for output
 const colors = {
@@ -24,6 +40,9 @@ let testsFailed = 0;
 
 // Track everything this suite creates so we can remove it afterwards
 const created = { items: [], receipts: [], issues: [] };
+
+let testServer = null;
+let testDbDir = null;
 
 async function test(name, fn) {
   try {
@@ -82,8 +101,7 @@ async function postJSON(endpoint, body) {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  if (!ok) throw new Error(`HTTP ${status}: ${JSON.stringify(data)}`);
-  return data;
+  return { ok, status, data };
 }
 
 async function sendJSON(endpoint, method, body) {
@@ -96,10 +114,59 @@ async function sendJSON(endpoint, method, body) {
 }
 
 /** Find an item row by kod_kala in /api/items. */
-async function getItem(kodKala) {
-  const items = await fetchJSON('/items');
+async function getItem(kodKala, includeInactive = false) {
+  const items = await fetchJSON(`/items${includeInactive ? '?include_inactive=1' : ''}`);
   return items.find((i) => i.kod_kala === kodKala);
 }
+
+// ------------------------------------------------------------------ server setup
+
+async function startTestServer() {
+  testDbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'warehouse-test-'));
+  const dbPath = path.join(testDbDir, 'warehouse-test.db');
+
+  testServer = spawn('node', ['src/server.js'], {
+    cwd: BACKEND_DIR,
+    env: { ...process.env, PORT: TEST_PORT, WAREHOUSE_DB_PATH: dbPath },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  let bootOutput = '';
+  testServer.stdout.on('data', (d) => { bootOutput += d; });
+  testServer.stderr.on('data', (d) => { bootOutput += d; });
+
+  // Wait for the health endpoint to report the database is ready. The server
+  // starts listening before initDatabase() finishes, so an ok response alone
+  // is not enough — every request would otherwise hit the 503 guard.
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${BASE_URL}/health`);
+      if (res.ok) {
+        const body = await res.json();
+        if (body.dbReady && body.inventoryServiceReady) return;
+      }
+    } catch {
+      // still booting
+    }
+    await new Promise((r) => setTimeout(r, 200));
+  }
+
+  testServer.kill('SIGKILL');
+  throw new Error(`Test server failed to start. Output:\n${bootOutput}`);
+}
+
+async function stopTestServer() {
+  if (!testServer) return;
+  try {
+    testServer.kill('SIGTERM');
+    await new Promise((r) => setTimeout(r, 200));
+    testServer.kill('SIGKILL');
+  } catch { /* already gone */ }
+  testServer = null;
+}
+
+// ---------------------------------------------------------------------- tests
 
 async function runTests() {
   console.log(`${colors.yellow}
@@ -150,9 +217,44 @@ ${colors.reset}`);
     assertTrue(items.some((i) => i.is_active === 0 || i.is_active === 1), 'Should return items with is_active flag');
   });
 
-  await test('Inventory endpoint equals items endpoint', async () => {
-    const [items, inventory] = await Promise.all([fetchJSON('/items'), fetchJSON('/inventory')]);
-    assertEquals(items.length, inventory.length, 'Both endpoints should return same row count');
+  await test('Inactive items stay visible in inventory with their stock', async () => {
+    // Deactivate an item that holds stock, then confirm inventory and reports
+    // still report it. An item retired from new transactions is not zero stock.
+    const code = `V${Date.now().toString().slice(-6)}`;
+    await postJSON('/items', { kod_kala: code, naam_kala: 'کالای غیرفعال آزمایشی', vahed: 'عدد' });
+    created.items.push(code);
+
+    await postJSON('/receipts', {
+      receipt_number: `TEST-A-${Date.now()}`,
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: code, maqdar: 50, vahed: 'عدد' }],
+    }).then((r) => created.receipts.push(r.data.id));
+
+    await sendJSON(`/items/${code}`, 'DELETE');
+    const inactive = await getItem(code, true);
+    assertEquals(inactive.is_active, 0, 'Item should be deactivated');
+    assertEquals(Number(inactive.current_stock), 50, 'Inactive item should still show its stock');
+
+    const inventory = await fetchJSON('/inventory');
+    const invRow = inventory.find((i) => i.kod_kala === code);
+    assertTrue(invRow, 'Inactive item must remain visible in /api/inventory');
+    assertEquals(Number(invRow.current_stock), 50, 'Inventory must report the inactive item stock');
+
+    const report = await fetchJSON('/reports/inventory');
+    const repRow = report.items.find((i) => i.kod_kala === code);
+    assertTrue(repRow, 'Inactive item must remain visible in the inventory report');
+
+    // And it must not be selectable for new documents.
+    const active = await fetchJSON('/items');
+    assertTrue(!active.some((i) => i.kod_kala === code), 'Inactive item must not appear in the active catalog');
+  });
+
+  await test('Inventory endpoint equals full catalog', async () => {
+    const [items, inventory] = await Promise.all([
+      fetchJSON('/items?include_inactive=1'),
+      fetchJSON('/inventory'),
+    ]);
+    assertEquals(items.length, inventory.length, 'Both endpoints should return the same row count');
     const byCode = new Map(inventory.map((i) => [i.kod_kala, i]));
     for (const item of items) {
       const inv = byCode.get(item.kod_kala);
@@ -162,7 +264,7 @@ ${colors.reset}`);
   });
 
   await test('Derived inventory invariant holds for every item', async () => {
-    const items = await fetchJSON('/items');
+    const items = await fetchJSON('/items?include_inactive=1');
     for (const item of items) {
       const expected = item.baseline_qty + item.total_receipts - item.total_issues;
       assertApproxEquals(
@@ -201,11 +303,82 @@ ${colors.reset}`);
     }
   });
 
+  await test('Receipts and issues list report total_quantity', async () => {
+    const [receipts, issues] = await Promise.all([fetchJSON('/receipts'), fetchJSON('/issues')]);
+    for (const r of receipts) {
+      assertTrue('total_quantity' in r, `Receipt ${r.receipt_number} should report total_quantity`);
+      // The listed total must equal the sum of its actual lines.
+      const detail = await fetchJSON(`/receipts/${r.id}`);
+      const lineSum = detail.lines.reduce((s, l) => s + Number(l.maqdar || 0), 0);
+      assertApproxEquals(Number(r.total_quantity), lineSum, `Receipt ${r.receipt_number} total_quantity`);
+    }
+    for (const i of issues) {
+      assertTrue('total_quantity' in i, `Issue ${i.issue_number} should report total_quantity`);
+      const detail = await fetchJSON(`/issues/${i.id}`);
+      const lineSum = detail.lines.reduce((s, l) => s + Number(l.maqdar || 0), 0);
+      assertApproxEquals(Number(i.total_quantity), lineSum, `Issue ${i.issue_number} total_quantity`);
+    }
+  });
+
+  // ------------------------------------------------------------------
+  // Seeding regression — opening documents must be loaded
+  // ------------------------------------------------------------------
+
+  await test('Seed loads opening receipts and issues, not just items and baseline', async () => {
+    const receipts = await fetchJSON('/receipts');
+    const issues = await fetchJSON('/issues');
+    assertTrue(receipts.length > 0, 'A freshly seeded database must contain the opening receipts');
+    assertTrue(issues.length > 0, 'A freshly seeded database must contain the opening issues');
+
+    // K010 opens with 44 and the seeded issues consume 2 + 3 + 12 = 17.
+    const item = await getItem('K010');
+    assertApproxEquals(Number(item.current_stock), 27, 'K010 stock must reflect seeded baseline minus seeded issues');
+  });
+
+  // ------------------------------------------------------------------
+  // Jalali date boundary
+  // ------------------------------------------------------------------
+
+  await test('Gregorian receipt date is rejected', async () => {
+    const { ok, status, data } = await postJSON('/receipts', {
+      receipt_number: `TEST-G-${Date.now()}`,
+      tarikh: '2026-09-30',
+      lines: [{ kala_id: 'T001', maqdar: 1, vahed: 'عدد' }],
+    });
+    assertFalse(ok, 'Gregorian tarikh must be rejected');
+    assertEquals(status, 400, 'Should return 400 for a Gregorian date');
+    assertTrue(String(data.error).includes('شمسی'), `Error should mention the Jalali requirement, got: ${data.error}`);
+  });
+
+  await test('Gregorian issue date is rejected', async () => {
+    const { ok, status } = await postJSON('/issues', {
+      issue_number: `TEST-GI-${Date.now()}`,
+      tarikh: '2026-09-30',
+      lines: [{ kala_id: 'T001', maqdar: 1, vahed: 'عدد' }],
+    });
+    assertFalse(ok, 'Gregorian tarikh must be rejected');
+    assertEquals(status, 400, 'Should return 400 for a Gregorian date');
+  });
+
+  await test('Jalali receipt date in canonical form is accepted', async () => {
+    const before = await getItem('T001');
+    const { ok, data } = await postJSON('/receipts', {
+      receipt_number: `TEST-J-${Date.now()}`,
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: 'T001', maqdar: 4, vahed: 'عدد' }],
+    });
+    assertTrue(ok, `Jalali tarikh must be accepted, got: ${JSON.stringify(data)}`);
+    created.receipts.push(data.id);
+    const after = await getItem('T001');
+    assertApproxEquals(Number(after.current_stock), Number(before.current_stock) + 4, 'Stock should increase');
+  });
+
   // ------------------------------------------------------------------
   // Item lifecycle
   // ------------------------------------------------------------------
 
   const testCode = `T${Date.now().toString().slice(-6)}`;
+  let multiLineIssueId = null;
 
   await test('Suggest next item code', async () => {
     const data = await fetchJSON('/items/suggest-code/K');
@@ -213,8 +386,22 @@ ${colors.reset}`);
     assertTrue(data.suggested_code.startsWith('K'), 'Suggested code should honour the prefix');
   });
 
+  await test('Suggest next item code never emits NaN', async () => {
+    // A code with a non-numeric suffix used to produce `${prefix}NaN`.
+    const oddCode = `Z${Date.now().toString().slice(-6)}A`;
+    await postJSON('/items', { kod_kala: oddCode, naam_kala: 'کالای پسوند غیرعددی', vahed: 'عدد' });
+    created.items.push(oddCode);
+
+    const data = await fetchJSON('/items/suggest-code/Z');
+    assertTrue(data.suggested_code, 'Should return a suggested code');
+    assertFalse(
+      data.suggested_code.includes('NaN'),
+      `Suggested code must never contain NaN, got: ${data.suggested_code}`
+    );
+  });
+
   await test('Create item (POST /items)', async () => {
-    const result = await postJSON('/items', {
+    const { data: result, ok } = await postJSON('/items', {
       kod_kala: testCode,
       naam_kala: 'کالای آزمایشی',
       goh: 'آزمایش',
@@ -223,6 +410,7 @@ ${colors.reset}`);
       hadd_aqal_mojoodi: 5,
       tavazihat: 'ایجاد شده توسط تست خودکار',
     });
+    assertTrue(ok, `Item creation should succeed, got: ${JSON.stringify(result)}`);
     assertEquals(result.kod_kala, testCode, 'Should echo the item code');
     created.items.push(testCode);
 
@@ -232,16 +420,13 @@ ${colors.reset}`);
   });
 
   await test('Duplicate item code is rejected', async () => {
-    try {
-      await postJSON('/items', {
-        kod_kala: testCode,
-        naam_kala: 'تکراری',
-        vahed: 'عدد',
-      });
-      throw new Error('Should have rejected duplicate code');
-    } catch (error) {
-      assertTrue(error.message.includes('400'), 'Should return 400 for duplicate code');
-    }
+    const { ok, status } = await postJSON('/items', {
+      kod_kala: testCode,
+      naam_kala: 'تکراری',
+      vahed: 'عدد',
+    });
+    assertFalse(ok, 'Should have rejected duplicate code');
+    assertEquals(status, 400, 'Should return 400 for duplicate code');
   });
 
   await test('Update item (PUT /items/:kod_kala)', async () => {
@@ -256,6 +441,24 @@ ${colors.reset}`);
     const item = await getItem(testCode);
     assertEquals(item.naam_kala, 'کالای آزمایشی ویرایش شده', 'Name should be updated');
     assertEquals(Number(item.hadd_aqal_mojoodi), 10, 'Min stock should be updated');
+  });
+
+  await test('Update refreshes updated_at', async () => {
+    const before = await getItem(testCode, true);
+    await new Promise((r) => setTimeout(r, 1100));
+    await sendJSON(`/items/${testCode}`, 'PUT', {
+      naam_kala: 'کالای آزمایشی ویرایش شده دوباره',
+      goh: 'آزمایش',
+      zirgoh: 'تست',
+      vahed: 'عدد',
+      hadd_aqal_mojoodi: 10,
+      tavazihat: 'ویرایش شده',
+    });
+    const after = await getItem(testCode, true);
+    assertTrue(
+      String(after.updated_at) > String(before.updated_at),
+      `updated_at should advance on edit (${before.updated_at} -> ${after.updated_at})`
+    );
   });
 
   await test('Update missing item returns 404', async () => {
@@ -279,7 +482,7 @@ ${colors.reset}`);
 
   await test('Create multi-line receipt (POST /receipts)', async () => {
     const before = await getItem(testCode);
-    const receipt = await postJSON('/receipts', {
+    const { ok, data: receipt } = await postJSON('/receipts', {
       receipt_number: `TEST-R-${Date.now()}`,
       tarikh: '1405/07/01',
       tavazihat: 'رسید آزمایشی',
@@ -288,6 +491,7 @@ ${colors.reset}`);
         { kala_id: testCode, maqdar: 5, vahed: 'عدد', tavazihat: 'ردیف دوم' },
       ],
     });
+    assertTrue(ok, `Receipt creation should succeed, got: ${JSON.stringify(receipt)}`);
     assertTrue(receipt.id, 'Receipt creation should return ID');
     created.receipts.push(receipt.id);
 
@@ -308,9 +512,23 @@ ${colors.reset}`);
     assertTrue(detail.lines[0].naam_kala !== undefined, 'Lines should include the item name');
   });
 
+  await test('Duplicate receipt number is rejected with 400, not 500', async () => {
+    const { ok, status, data } = await postJSON('/receipts', {
+      receipt_number: 'R-050617-173',
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: testCode, maqdar: 1, vahed: 'عدد' }],
+    });
+    assertFalse(ok, 'Duplicate receipt number must be rejected');
+    assertEquals(status, 400, 'Should return 400 (raw UNIQUE failure would be 500)');
+    assertTrue(
+      String(data.error).includes('قبلاً'),
+      `Error should be a clean Persian message, got: ${data.error}`
+    );
+  });
+
   await test('Create multi-line issue (POST /issues)', async () => {
     const before = await getItem(testCode);
-    const issue = await postJSON('/issues', {
+    const { ok, data: issue } = await postJSON('/issues', {
       issue_number: `TEST-I-${Date.now()}`,
       tarikh: '1405/07/02',
       tahvil_gir: 'تیم تست',
@@ -321,8 +539,10 @@ ${colors.reset}`);
         { kala_id: testCode, maqdar: 2, vahed: 'عدد' },
       ],
     });
+    assertTrue(ok, `Issue creation should succeed, got: ${JSON.stringify(issue)}`);
     assertTrue(issue.id, 'Issue creation should return ID');
     created.issues.push(issue.id);
+    multiLineIssueId = issue.id;
 
     const after = await getItem(testCode);
     assertApproxEquals(
@@ -333,42 +553,100 @@ ${colors.reset}`);
     assertEquals(Number(after.total_issues), 10, 'total_issues should reflect all lines');
   });
 
+  await test('Duplicate issue number is rejected with 400, not 500', async () => {
+    const { ok, status } = await postJSON('/issues', {
+      issue_number: 'H-050617-1',
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: testCode, maqdar: 1, vahed: 'عدد' }],
+    });
+    assertFalse(ok, 'Duplicate issue number must be rejected');
+    assertEquals(status, 400, 'Should return 400 (raw UNIQUE failure would be 500)');
+  });
+
+  await test('Two lines of the same item cannot jointly over-issue', async () => {
+    // Two lines that each fit individually but together exceed stock. The old
+    // per-line check let this through and drove the item negative.
+    const before = await getItem(testCode);
+    const stock = Number(before.current_stock);
+    assertTrue(stock >= 2, `Test fixture should hold at least 2 units (has ${stock})`);
+    const line1 = stock - 1; // fits on its own
+    const line2 = 2;         // fits on its own; together they are stock + 1
+
+    const { ok, status, data } = await postJSON('/issues', {
+      issue_number: `TEST-OV-${Date.now()}`,
+      tarikh: '1405/07/03',
+      lines: [
+        { kala_id: testCode, maqdar: line1, vahed: 'عدد' },
+        { kala_id: testCode, maqdar: line2, vahed: 'عدد' },
+      ],
+    });
+    assertFalse(ok, 'The document must be rejected');
+    assertEquals(status, 400, 'Should return 400 for insufficient stock');
+    assertTrue(String(data.error).includes('ناکافی'), `Error should say stock is insufficient, got: ${data.error}`);
+
+    const after = await getItem(testCode);
+    assertApproxEquals(Number(after.current_stock), stock, 'Stock must be unchanged');
+  });
+
   await test('Issue is rejected when stock is insufficient', async () => {
     const before = await getItem(testCode);
-    try {
-      await postJSON('/issues', {
-        issue_number: `TEST-FAIL-${Date.now()}`,
-        tarikh: '1405/07/03',
-        tahvil_gir: 'تیم تست',
-        lines: [{ kala_id: testCode, maqdar: Number(before.current_stock) + 1000, vahed: 'عدد' }],
-      });
-      throw new Error('Should have failed with insufficient inventory');
-    } catch (error) {
-      assertTrue(
-        error.message.includes('400') || error.message.includes('ناکافی'),
-        'Should return insufficient inventory error'
-      );
-    }
+    const { ok, status } = await postJSON('/issues', {
+      issue_number: `TEST-FAIL-${Date.now()}`,
+      tarikh: '1405/07/03',
+      tahvil_gir: 'تیم تست',
+      lines: [{ kala_id: testCode, maqdar: Number(before.current_stock) + 1000, vahed: 'عدد' }],
+    });
+    assertFalse(ok, 'Should have failed with insufficient inventory');
+    assertEquals(status, 400, 'Should return insufficient inventory error');
+
     const after = await getItem(testCode);
     assertEquals(Number(after.current_stock), Number(before.current_stock), 'Stock must be unchanged after rejection');
   });
 
+  await test('Concurrent issues cannot both spend the same stock', async () => {
+    // Two documents submitted at once, each asking for just over half the
+    // available stock. Only one may succeed; the other must be rejected and
+    // leave the balance intact.
+    const before = await getItem(testCode);
+    const half = Math.floor(Number(before.current_stock) / 2);
+    const ask = half + 1;
+    if (ask < 1) return; // not enough stock to exercise this case
+
+    const [a, b] = await Promise.all([
+      postJSON('/issues', {
+        issue_number: `TEST-C1-${Date.now()}`,
+        tarikh: '1405/07/04',
+        lines: [{ kala_id: testCode, maqdar: ask, vahed: 'عدد' }],
+      }),
+      postJSON('/issues', {
+        issue_number: `TEST-C2-${Date.now() + 1}`,
+        tarikh: '1405/07/04',
+        lines: [{ kala_id: testCode, maqdar: ask, vahed: 'عدد' }],
+      }),
+    ]);
+
+    const successes = [a, b].filter((r) => r.ok);
+    for (const s of successes) created.issues.push(s.data.id);
+    assertEquals(successes.length, 1, `Exactly one concurrent issue must succeed (got ${successes.length})`);
+
+    const after = await getItem(testCode);
+    assertApproxEquals(
+      Number(after.current_stock),
+      Number(before.current_stock) - ask,
+      'Stock must drop by exactly one document'
+    );
+  });
+
   await test('Receipt validation - missing fields', async () => {
-    try {
-      await postJSON('/receipts', { tarikh: '1405/07/01' });
-      throw new Error('Should have failed validation');
-    } catch (error) {
-      assertTrue(error.message.includes('400'), 'Should return validation error');
-    }
+    const { ok, status } = await postJSON('/receipts', { tarikh: '1405/07/01' });
+    assertFalse(ok, 'Should have failed validation');
+    assertEquals(status, 400, 'Should return validation error');
   });
 
   await test('Issue validation - empty lines', async () => {
-    try {
-      await postJSON('/issues', { issue_number: 'TEST-EMPTY', tarikh: '1405/07/01', lines: [] });
-      throw new Error('Should have failed validation');
-    } catch (error) {
-      assertTrue(error.message.includes('400'), 'Should return validation error');
-    }
+    const { ok, status } = await postJSON('/issues', { issue_number: 'TEST-EMPTY', tarikh: '1405/07/01', lines: [] });
+    assertFalse(ok, 'Should have failed validation');
+    assertEquals(status, 400, 'Should return validation error');
   });
 
   await test('Cardex running balance ends at current stock', async () => {
@@ -388,15 +666,18 @@ ${colors.reset}`);
 
   await test('Delete issue document restores stock', async () => {
     const before = await getItem(testCode);
-    const issueId = created.issues.pop();
-    const result = await sendJSON(`/issues/${issueId}`, 'DELETE');
+    const detail = await fetchJSON(`/issues/${multiLineIssueId}`);
+    const issueQty = detail.lines.reduce((s, l) => s + Number(l.maqdar || 0), 0);
+
+    const result = await sendJSON(`/issues/${multiLineIssueId}`, 'DELETE');
     assertEquals(result.deleted, true, 'Delete should confirm');
     const after = await getItem(testCode);
     assertApproxEquals(
       Number(after.current_stock),
-      Number(before.current_stock) + 10,
+      Number(before.current_stock) + issueQty,
       'Deleting an issue should restore its quantity'
     );
+    created.issues = created.issues.filter((id) => id !== multiLineIssueId);
   });
 
   await test('Delete receipt document restores stock', async () => {
@@ -413,7 +694,17 @@ ${colors.reset}`);
   });
 
   await test('Item without history can be hard-deleted', async () => {
-    // Receipt/issue docs were removed above, so the test item has no movement history
+    // Clear the documents this suite still holds for other items; once they
+    // are gone the test item has no movement history and must be hard-deleted.
+    for (const id of created.issues) {
+      try { await sendJSON(`/issues/${id}`, 'DELETE'); } catch { /* already gone */ }
+      created.issues = created.issues.filter((x) => x !== id);
+    }
+    for (const id of created.receipts) {
+      try { await sendJSON(`/receipts/${id}`, 'DELETE'); } catch { /* already gone */ }
+      created.receipts = created.receipts.filter((x) => x !== id);
+    }
+
     const result = await sendJSON(`/items/${testCode}`, 'DELETE');
     assertEquals(result.deleted, true, 'Item with no history should be hard-deleted');
     created.items = created.items.filter((c) => c !== testCode);
@@ -432,6 +723,7 @@ ${colors.reset}`);
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 3, vahed: 'عدد' }],
     });
+    created.receipts.push(receipt.data.id);
 
     const result = await sendJSON(`/items/${code}`, 'DELETE');
     assertEquals(result.deactivated, true, 'Item with history should be deactivated');
@@ -442,11 +734,6 @@ ${colors.reset}`);
     ]);
     assertTrue(!active.some((i) => i.kod_kala === code), 'Deactivated item must not appear in active list');
     assertTrue(all.some((i) => i.kod_kala === code && i.is_active === 0), 'Deactivated item must appear with flag');
-
-    // Clean up: remove the receipt so the item can be hard-deleted
-    await sendJSON(`/receipts/${receipt.id}`, 'DELETE');
-    await sendJSON(`/items/${code}`, 'DELETE');
-    created.items = created.items.filter((c) => c !== code);
   });
 
   // ------------------------------------------------------------------
@@ -476,6 +763,18 @@ ${colors.reset}`);
     if (receipts.receipts.length > 0) {
       assertTrue(Array.isArray(receipts.receipts[0].lines), 'Report receipts should include lines');
     }
+  });
+
+  await test('Date-range filters work on Jalali bounds', async () => {
+    const all = await fetchJSON('/reports/receipts');
+    const inRange = await fetchJSON('/reports/receipts?from=1405/06/01&to=1405/07/30');
+    assertTrue(inRange.count <= all.count, 'A Jalali range must not return more than the whole set');
+    assertTrue(inRange.count >= 1, 'The seeded receipt (1405/06/17) must fall inside a covering Jalali range');
+
+    // A range far outside the Jalali data must return nothing — this is what a
+    // mixed-calendar database silently got wrong.
+    const away = await fetchJSON('/reports/receipts?from=1399/01/01&to=1399/12/29');
+    assertEquals(away.count, 0, 'A disjoint Jalali range must return no receipts');
   });
 
   await test('Movements report covers all stock movements', async () => {
@@ -527,8 +826,17 @@ ${colors.reset}`);
       try { await sendJSON(`/items/${code}`, 'DELETE'); } catch { /* may already be gone */ }
     }
     const items = await fetchJSON('/items?include_inactive=1');
-    const leftovers = items.filter((i) => /^(T|H)\d{6}$/.test(i.kod_kala));
-    assertEquals(leftovers.length, 0, 'No test items should remain');
+    const leftovers = items.filter((i) => /^(T|H|V|Z)\d{6}/.test(i.kod_kala));
+    assertEquals(leftovers.length, 0, `No test items should remain (found ${leftovers.map(i => i.kod_kala).join(', ')})`);
+  });
+
+  await test('Isolation: the test database is separate from the live one', async () => {
+    // The seeded opening documents must still be intact after the whole suite
+    // ran — if these were missing, the suite would have been mutating the
+    // development database again.
+    const [receipts, issues] = await Promise.all([fetchJSON('/receipts'), fetchJSON('/issues')]);
+    assertTrue(receipts.some((r) => r.receipt_number === 'R-050617-173'), 'Seeded receipt must be intact');
+    assertEquals(issues.length, 3, 'The three seeded issues must be intact');
   });
 
   // Print summary
@@ -542,15 +850,34 @@ ${colors.reset}`);
 
   if (testsFailed > 0) {
     console.log(`${colors.red}Failed: ${testsFailed}/${total}${colors.reset}`);
-    process.exit(1);
   } else {
     console.log(`${colors.green}\n✓ All tests passed!${colors.reset}\n`);
-    process.exit(0);
   }
 }
 
-// Run tests
-runTests().catch((error) => {
+function assertFalse(condition, message) {
+  if (condition) throw new Error(message);
+}
+
+async function main() {
+  try {
+    await startTestServer();
+    console.log(`${colors.green}✓ Test server running on port ${TEST_PORT} (isolated database)${colors.reset}\n`);
+    await runTests();
+  } finally {
+    await stopTestServer();
+    if (testDbDir) {
+      fs.rmSync(testDbDir, { recursive: true, force: true });
+    }
+  }
+
+  if (testsFailed > 0) process.exit(1);
+  process.exit(0);
+}
+
+main().catch((error) => {
   console.error(`${colors.red}Fatal error: ${error.message}${colors.reset}`);
+  stopTestServer();
+  if (testDbDir) fs.rmSync(testDbDir, { recursive: true, force: true });
   process.exit(1);
 });

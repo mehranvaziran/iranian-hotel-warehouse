@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { normalizeJalaliDate, isValidJalaliDate } from '../utils/jalali';
 import './Reports.css';
 
 export default function Reports() {
@@ -69,9 +70,21 @@ export default function Reports() {
   };
 
   const runMovements = async () => {
+    // The backend compares tarikh lexicographically, so the bounds must be
+    // Jalali in canonical YYYY/MM/DD form — a Gregorian value from
+    // <input type="date"> silently matched nothing.
+    if (movFrom && !isValidJalaliDate(movFrom)) {
+      alert('تاریخ شروع باید به صورت شمسی و در قالب YYYY/MM/DD باشد');
+      return;
+    }
+    if (movTo && !isValidJalaliDate(movTo)) {
+      alert('تاریخ پایان باید به صورت شمسی و در قالب YYYY/MM/DD باشد');
+      return;
+    }
+
     const params = new URLSearchParams();
-    if (movFrom) params.set('from', movFrom);
-    if (movTo) params.set('to', movTo);
+    if (movFrom) params.set('from', normalizeJalaliDate(movFrom));
+    if (movTo) params.set('to', normalizeJalaliDate(movTo));
     if (movItem) params.set('kala_id', movItem);
     try {
       setMovLoading(true);
@@ -86,9 +99,18 @@ export default function Reports() {
   };
 
   const runDocReports = async () => {
+    if (docFrom && !isValidJalaliDate(docFrom)) {
+      alert('تاریخ شروع باید به صورت شمسی و در قالب YYYY/MM/DD باشد');
+      return;
+    }
+    if (docTo && !isValidJalaliDate(docTo)) {
+      alert('تاریخ پایان باید به صورت شمسی و در قالب YYYY/MM/DD باشد');
+      return;
+    }
+
     const params = new URLSearchParams();
-    if (docFrom) params.set('from', docFrom);
-    if (docTo) params.set('to', docTo);
+    if (docFrom) params.set('from', normalizeJalaliDate(docFrom));
+    if (docTo) params.set('to', normalizeJalaliDate(docTo));
     const qs = params.toString();
     try {
       setDocLoading(true);
@@ -275,12 +297,26 @@ export default function Reports() {
         <div className="report-section">
           <div className="report-filters">
             <label>
-              از تاریخ:
-              <input type="date" value={movFrom} onChange={(e) => setMovFrom(e.target.value)} />
+              از تاریخ (شمسی):
+              <input
+                type="text"
+                value={movFrom}
+                onChange={(e) => setMovFrom(e.target.value)}
+                placeholder="YYYY/MM/DD"
+                inputMode="numeric"
+                dir="ltr"
+              />
             </label>
             <label>
-              تا تاریخ:
-              <input type="date" value={movTo} onChange={(e) => setMovTo(e.target.value)} />
+              تا تاریخ (شمسی):
+              <input
+                type="text"
+                value={movTo}
+                onChange={(e) => setMovTo(e.target.value)}
+                placeholder="YYYY/MM/DD"
+                inputMode="numeric"
+                dir="ltr"
+              />
             </label>
             <label>
               کالا:
@@ -338,12 +374,26 @@ export default function Reports() {
         <div className="report-section">
           <div className="report-filters">
             <label>
-              از تاریخ:
-              <input type="date" value={docFrom} onChange={(e) => setDocFrom(e.target.value)} />
+              از تاریخ (شمسی):
+              <input
+                type="text"
+                value={docFrom}
+                onChange={(e) => setDocFrom(e.target.value)}
+                placeholder="YYYY/MM/DD"
+                inputMode="numeric"
+                dir="ltr"
+              />
             </label>
             <label>
-              تا تاریخ:
-              <input type="date" value={docTo} onChange={(e) => setDocTo(e.target.value)} />
+              تا تاریخ (شمسی):
+              <input
+                type="text"
+                value={docTo}
+                onChange={(e) => setDocTo(e.target.value)}
+                placeholder="YYYY/MM/DD"
+                inputMode="numeric"
+                dir="ltr"
+              />
             </label>
             <button className="btn-run" onClick={runDocReports}>مشاهده اسناد</button>
           </div>

@@ -7,10 +7,7 @@
       "zirgoh": "استاد",
       "vahed": "شاخه",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K002",
@@ -19,10 +16,7 @@
       "zirgoh": "استاد",
       "vahed": "شاخه",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K003",
@@ -31,10 +25,7 @@
       "zirgoh": "استاد",
       "vahed": "شاخه",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K004",
@@ -43,10 +34,7 @@
       "zirgoh": "رانر",
       "vahed": "شاخه",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K005",
@@ -55,10 +43,7 @@
       "zirgoh": "رانر",
       "vahed": "شاخه",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K006",
@@ -67,10 +52,7 @@
       "zirgoh": "رانر",
       "vahed": "شاخه",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K007",
@@ -79,10 +61,7 @@
       "zirgoh": "پنل",
       "vahed": "برگ",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K008",
@@ -91,10 +70,7 @@
       "zirgoh": "پنل",
       "vahed": "برگ",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K009",
@@ -103,10 +79,7 @@
       "zirgoh": "پنل",
       "vahed": "برگ",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
+      "tavazihat": ""
     },
     {
       "kod_kala": "K010",
@@ -115,10 +88,7 @@
       "zirgoh": "پیچ پنل",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 27,
-      "total_receipts": 0,
-      "total_issues": 17,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K011",
@@ -127,10 +97,7 @@
       "zirgoh": "پیچ پنل",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 37,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K012",
@@ -139,10 +106,7 @@
       "zirgoh": "پیچ سازه",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 9,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K013",
@@ -151,10 +115,7 @@
       "zirgoh": "پیچ سرمته",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 15,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K014",
@@ -163,10 +124,7 @@
       "zirgoh": "پیچ سرمته",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 4,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K015",
@@ -175,10 +133,7 @@
       "zirgoh": "پیچ سرمته",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 3,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K016",
@@ -187,10 +142,7 @@
       "zirgoh": "پیچ سرمته",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 3,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K017",
@@ -199,130 +151,7 @@
       "zirgoh": "میخ و چاشنی",
       "vahed": "بسته",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 36,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
-    },
-    {
-      "kod_kala": "T001",
-      "naam_kala": "صفحه استیل بر بزرگ",
-      "goh": "ابزار و ملزومات  عمومی",
-      "zirgoh": "صفحه برش",
-      "vahed": "عدد",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 15,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
-    },
-    {
-      "kod_kala": "T002",
-      "naam_kala": "صفحه ساب بزرگ",
-      "goh": "ابزار و ملزومات  عمومی",
-      "zirgoh": "صفحه ساب",
-      "vahed": "عدد",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 1,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
-    },
-    {
-      "kod_kala": "T003",
-      "naam_kala": "مته 4 شیار کوتاه نمره 10",
-      "goh": "ابزار و ملزومات  عمومی",
-      "zirgoh": "",
-      "vahed": "عدد",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 2,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
-    },
-    {
-      "kod_kala": "T004",
-      "naam_kala": "مته 4 شیار بلند نمره 10",
-      "goh": "ابزار و ملزومات  عمومی",
-      "zirgoh": "مته",
-      "vahed": "عدد",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 2,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
-    },
-    {
-      "kod_kala": "T005",
-      "naam_kala": "دستکش کارگری روکشدار",
-      "goh": "ابزار و ملزومات  عمومی",
-      "zirgoh": "لوازم حفاظت فردی",
-      "vahed": "جفت",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 10,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
-    },
-    {
-      "kod_kala": "T006",
-      "naam_kala": "الکترود 3/2 میکا",
-      "goh": "ابزار و ملزومات  عمومی",
-      "zirgoh": "ملزومات جوشکاری",
-      "vahed": "بسته",
-      "hadd_aqal_mojoodi": 6,
-      "mojoodi_fael": 5,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "کم"
-    },
-    {
-      "kod_kala": "C001",
-      "naam_kala": "ضد زنگ سناتور",
-      "goh": "رنگ و نقاشی",
-      "zirgoh": "ضد زنگ",
-      "vahed": "لیتر",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
-    },
-    {
-      "kod_kala": "C002",
-      "naam_kala": "تینر",
-      "goh": "رنگ و نقاشی",
-      "zirgoh": "تینر و حلال",
-      "vahed": "لیتر",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 2,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
-    },
-    {
-      "kod_kala": "S001",
-      "naam_kala": "قوطی 40*80",
-      "goh": "مصالح ساختمانی",
-      "zirgoh": "مقاطع فولادی",
-      "vahed": "شاخه",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 0,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": "تمام شده"
-    },
-    {
-      "kod_kala": "S002",
-      "naam_kala": "میخ 6 سانتی",
-      "goh": "مصالح ساختمانی",
-      "zirgoh": "میخ و متعلقات",
-      "vahed": "بسته",
-      "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 3,
-      "total_receipts": 0,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
     },
     {
       "kod_kala": "K018",
@@ -331,17 +160,104 @@
       "zirgoh": "استاد",
       "vahed": "شاخه",
       "hadd_aqal_mojoodi": 0,
-      "mojoodi_fael": 1050,
-      "total_receipts": 1050,
-      "total_issues": 0,
-      "status": ""
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "T001",
+      "naam_kala": "صفحه استیل بر بزرگ",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "صفحه برش",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "T002",
+      "naam_kala": "صفحه ساب بزرگ",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "صفحه ساب",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "T003",
+      "naam_kala": "مته 4 شیار کوتاه نمره 10",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "مته",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "T004",
+      "naam_kala": "مته 4 شیار بلند نمره 10",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "مته",
+      "vahed": "عدد",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "T005",
+      "naam_kala": "دستکش کارگری روکشدار",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "لوازم حفاظت فردی",
+      "vahed": "جفت",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "T006",
+      "naam_kala": "الکترود 3/2 میکا",
+      "goh": "ابزار و ملزومات  عمومی",
+      "zirgoh": "ملزومات جوشکاری",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 6,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "C001",
+      "naam_kala": "ضد زنگ سناتور",
+      "goh": "رنگ و نقاشی",
+      "zirgoh": "ضد زنگ",
+      "vahed": "لیتر",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "C002",
+      "naam_kala": "تینر",
+      "goh": "رنگ و نقاشی",
+      "zirgoh": "تینر و حلال",
+      "vahed": "لیتر",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "S001",
+      "naam_kala": "قوطی 40*80",
+      "goh": "مصالح ساختمانی",
+      "zirgoh": "مقاطع فولادی",
+      "vahed": "شاخه",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
+    },
+    {
+      "kod_kala": "S002",
+      "naam_kala": "میخ 6 سانتی",
+      "goh": "مصالح ساختمانی",
+      "zirgoh": "میخ و متعلقات",
+      "vahed": "بسته",
+      "hadd_aqal_mojoodi": 0,
+      "tavazihat": ""
     }
   ],
   "receipts": [
     {
       "receipt_num": "R-050617-173",
       "tarikh": "1405/06/17",
-      "radif": "1",
+      "radif": 1,
       "kala_id": "K018",
       "naam_kala": "استاد C 100*3500",
       "maqdar": 300,
@@ -351,7 +267,7 @@
     {
       "receipt_num": "R-050617-173",
       "tarikh": "1405/06/17",
-      "radif": "2",
+      "radif": 2,
       "kala_id": "K018",
       "naam_kala": "استاد C 100*3500",
       "maqdar": 750,
@@ -363,7 +279,7 @@
     {
       "issue_num": "H-050617-1",
       "tarikh": "1405/06/17",
-      "radif": "1",
+      "radif": 1,
       "kala_id": "K010",
       "naam_kala": "پیچ پنل 25 میلی TN25",
       "maqdar": 2,
@@ -375,7 +291,7 @@
     {
       "issue_num": "H-050617-2",
       "tarikh": "1405/06/18",
-      "radif": "2",
+      "radif": 2,
       "kala_id": "K010",
       "naam_kala": "پیچ پنل 25 میلی TN25",
       "maqdar": 3,
@@ -387,7 +303,7 @@
     {
       "issue_num": "H-050617-3",
       "tarikh": "1405/06/19",
-      "radif": "3",
+      "radif": 3,
       "kala_id": "K010",
       "naam_kala": "پیچ پنل 25 میلی TN25",
       "maqdar": 12,
@@ -404,65 +320,74 @@
       "vahed": "شاخه",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K002"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K002",
       "naam_kala": "استاد CW 100*3000",
       "vahed": "شاخه",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K003"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K003",
       "naam_kala": "استاد C 70*3500",
       "vahed": "شاخه",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K004"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K004",
       "naam_kala": "رانر UW 70*4000",
       "vahed": "شاخه",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K005"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K005",
       "naam_kala": "رانر UW 75*4000",
       "vahed": "شاخه",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K006"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K006",
       "naam_kala": "رانر UW 100*4000",
       "vahed": "شاخه",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K007"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K007",
       "naam_kala": "پنل گچی 84 برگی MR_AK_H2",
       "vahed": "برگ",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K008"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K008",
       "naam_kala": "پنل گچی 92 برگی RGPRO_AK",
       "vahed": "برگ",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K009"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K009",
       "naam_kala": "پنل گچی 100 برگی جی برد",
       "vahed": "برگ",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "K010"
+      "tavazihat": ""
     },
     {
+      "kala_id": "K010",
       "naam_kala": "پیچ پنل 25 میلی TN25",
       "vahed": "بسته",
       "mabna_qty": 44,
@@ -531,37 +456,42 @@
       "vahed": "عدد",
       "mabna_qty": 15,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "T002"
+      "tavazihat": ""
     },
     {
+      "kala_id": "T002",
       "naam_kala": "صفحه ساب بزرگ",
       "vahed": "عدد",
       "mabna_qty": 1,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "T003"
+      "tavazihat": ""
     },
     {
+      "kala_id": "T003",
       "naam_kala": "مته 4 شیار کوتاه نمره 10",
       "vahed": "عدد",
       "mabna_qty": 2,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "T004"
+      "tavazihat": ""
     },
     {
+      "kala_id": "T004",
       "naam_kala": "مته 4 شیار بلند نمره 10",
       "vahed": "عدد",
       "mabna_qty": 2,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "T005"
+      "tavazihat": ""
     },
     {
+      "kala_id": "T005",
       "naam_kala": "دستکش کارگری روکشدار",
       "vahed": "جفت",
       "mabna_qty": 10,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "T006"
+      "tavazihat": ""
     },
     {
+      "kala_id": "T006",
       "naam_kala": "الکترود 3/2 میکا",
       "vahed": "بسته",
       "mabna_qty": 5,
@@ -574,32 +504,36 @@
       "vahed": "لیتر",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "C002"
+      "tavazihat": ""
     },
     {
+      "kala_id": "C002",
       "naam_kala": "تینر",
       "vahed": "لیتر",
       "mabna_qty": 2,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "S001"
+      "tavazihat": ""
     },
     {
+      "kala_id": "S001",
       "naam_kala": "قوطی 40*80",
       "vahed": "شاخه",
       "mabna_qty": 0,
       "tarikh_mabna": "1405/06/14",
-      "tavazihat": "S002"
+      "tavazihat": ""
     },
     {
+      "kala_id": "S002",
       "naam_kala": "میخ 6 سانتی",
       "vahed": "بسته",
       "mabna_qty": 3,
-      "tarikh_mabna": "1405/06/14"
+      "tarikh_mabna": "1405/06/14",
+      "tavazihat": ""
     }
   ],
   "metadata": {
-    "extracted_at": "2026-09-21T12:17:02.973Z",
-    "source_file": "سیستم انبار.xlsx",
+    "extracted_at": "2026-09-30T08:26:22.507Z",
+    "source_file": "warehouse-source.xlsx",
     "total_items": 28,
     "total_receipts": 2,
     "total_issues": 3,

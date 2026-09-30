@@ -25,6 +25,11 @@ Thumbs.db
 *.swo
 
 # Database files (changed during runtime)
+# Broad pattern first: every *.db under data/ is runtime state, including the
+# manual-test and ad-hoc backups that the narrower patterns below missed.
+data/*.db
+data/*.db-wal
+data/*.db-shm
 data/warehouse.db
 *.sqlite
 *.sqlite3

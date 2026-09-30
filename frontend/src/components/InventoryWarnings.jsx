@@ -13,12 +13,21 @@ export default function InventoryWarnings({ warnings }) {
 
       {warnings && warnings.length > 0 ? (
         <div className="warnings-list">
-          {warnings.map((warning, idx) => (
+          {warnings.map((warning, idx) => {
+            // An item can legitimately have a zero minimum threshold, and
+            // dividing by it yields Infinity — which used to be rendered as
+            // "Infinity%" in the badge.
+            const threshold = Number(warning.hadd_aqal_mojoodi) || 0;
+            const pct = threshold > 0
+              ? Math.round((Number(warning.current_stock) / threshold) * 100)
+              : 0;
+
+            return (
             <div key={idx} className="warning-item">
               <div className="warning-item-header">
                 <div className="warning-item-code">{warning.kod_kala}</div>
                 <div className="warning-item-status critical">
-                  {Math.round(((warning.current_stock / warning.hadd_aqal_mojoodi) * 100) || 0)}%
+                  {pct}%
                 </div>
               </div>
               <div className="warning-item-name">{warning.naam_kala}</div>
@@ -29,14 +38,15 @@ export default function InventoryWarnings({ warnings }) {
                 </div>
                 <div className="detail">
                   <span className="label">حداقل:</span>
-                  <span className="value">{Number(warning.hadd_aqal_mojoodi).toLocaleString('fa-IR')} {warning.vahed}</span>
+                  <span className="value">{Number(warning.hadd_aqal_mojoodi || 0).toLocaleString('fa-IR')} {warning.vahed}</span>
                 </div>
               </div>
               <div className="warning-item-gap">
-                کمبود: {Math.max(0, warning.hadd_aqal_mojoodi - warning.current_stock).toLocaleString('fa-IR')} {warning.vahed}
+                کمبود: {Math.max(0, threshold - Number(warning.current_stock)).toLocaleString('fa-IR')} {warning.vahed}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="warnings-empty">

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import StatCard from './StatCard';
 import ActivityPanel from './ActivityPanel';
 import InventoryWarnings from './InventoryWarnings';
@@ -14,10 +14,24 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // The poll loop needs the values already on screen without depending on them
+  // in the effect's dependency list, which would restart (and re-poll) on every
+  // successful fetch. `keep` is mutated in place so the load-once flag survives
+  // re-renders.
+  const keep = useRef({});
+  keep.current.recentReceipts = recentReceipts;
+  keep.current.recentIssues = recentIssues;
+  keep.current.warnings = warnings;
+  keep.current.activity = activity;
+
   useEffect(() => {
+    let cancelled = false;
+
     const fetchDashboardData = async () => {
       try {
-        setLoading(true);
+        // Only the first load shows the full-page spinner; a background
+        // refresh keeps whatever is already on screen.
+        if (!keep.current.hasLoaded) setLoading(true);
         const [statsRes, receiptsRes, issuesRes, warningsRes, activityRes] = await Promise.all([
           fetch('/api/dashboard/stats'),
           fetch('/api/dashboard/recent-receipts'),
@@ -26,37 +40,83 @@ export default function Dashboard() {
           fetch('/api/dashboard/activity'),
         ]);
 
-        if (!statsRes.ok) throw new Error('Failed to fetch stats');
+        if (!statsRes.ok) throw new Error('خطا در دریافت آمار');
 
-        setStats(await statsRes.json());
-        if (receiptsRes.ok) setRecentReceipts(await receiptsRes.json());
-        if (issuesRes.ok) setRecentIssues(await issuesRes.json());
-        if (warningsRes.ok) setWarnings(await warningsRes.json());
-        if (activityRes.ok) setActivity(await activityRes.json());
+        // Apply the whole batch at once and only after every fetch resolved,
+        // so a partial failure cannot leave the panels mutually inconsistent.
+        // Panels whose fetch failed keep their previous data.
+        const prev = keep.current;
+        const next = {
+          stats: await statsRes.json(),
+          receipts: receiptsRes.ok ? await receiptsRes.json() : prev.recentReceipts,
+          issues: issuesRes.ok ? await issuesRes.json() : prev.recentIssues,
+          warnings: warningsRes.ok ? await warningsRes.json() : prev.warnings,
+          activity: activityRes.ok ? await activityRes.json() : prev.activity,
+        };
+
+        if (cancelled) return;
+
+        setStats(next.stats);
+        setRecentReceipts(next.receipts);
+        setRecentIssues(next.issues);
+        setWarnings(next.warnings);
+        setActivity(next.activity);
         setError(null);
       } catch (err) {
+        if (cancelled) return;
         console.error('Error fetching dashboard data:', err);
         setError(err.message);
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          keep.current.hasLoaded = true;
+        }
       }
     };
 
     fetchDashboardData();
     const interval = setInterval(fetchDashboardData, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   if (loading && !stats) {
     return <div className="dashboard-loading">در حال بارگذاری...</div>;
   }
 
-  if (error) {
-    return <div className="dashboard-error">خطا: {error}</div>;
+  // Only the first-ever load replaces the page with an error. Once data is on
+  // screen, a failed background refresh degrades to a banner instead of
+  // wiping the dashboard.
+  if (error && !stats) {
+    return (
+      <div className="dashboard-error">
+        <span>خطا: {error}</span>
+        <button type="button" className="btn-retry-dashboard" onClick={() => window.location.reload()}>
+          تلاش مجدد
+        </button>
+      </div>
+    );
   }
 
   return (
     <div className="dashboard">
+      {error && stats && (
+        // Data on screen is stale but still useful; tell the user instead of
+        // hiding it, and let them force a reload.
+        <div className="dashboard-stale-banner">
+          <span>⚠️ به‌روزرسانی ناموفق بود — اطلاعات نمایش داده شده ممکن است قدیمی باشد ({error})</span>
+          <button
+            type="button"
+            className="btn-retry-banner"
+            onClick={() => window.location.reload()}
+          >
+            به‌روزرسانی
+          </button>
+        </div>
+      )}
+
       {/* Statistics Section */}
       <section className="stats-section">
         <div className="stats-grid">

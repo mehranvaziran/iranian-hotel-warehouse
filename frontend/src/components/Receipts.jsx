@@ -1,24 +1,31 @@
 import React, { useState, useEffect } from 'react';
+import { todayJalali, normalizeJalaliDate } from '../utils/jalali';
 import './Receipts.css';
 
 const emptyLine = () => ({ kala_id: '', maqdar: '', vahed: '', tavazihat: '' });
+
+const blankForm = () => ({
+  receipt_number: '',
+  // Jalali, never Gregorian — a Gregorian default would poison date filters.
+  tarikh: todayJalali(),
+  tavazihat: '',
+  lines: [emptyLine()]
+});
 
 export default function Receipts() {
   const [receipts, setReceipts] = useState([]);
   const [expanded, setExpanded] = useState({});
   const [receiptLines, setReceiptLines] = useState({});
+  const [lineErrors, setLineErrors] = useState({});
   const [items, setItems] = useState([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+  const [itemsError, setItemsError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
-  const [formData, setFormData] = useState({
-    receipt_number: '',
-    tarikh: new Date().toISOString().split('T')[0],
-    tavazihat: '',
-    lines: [emptyLine()]
-  });
+  const [formData, setFormData] = useState(blankForm);
 
   const fetchReceipts = async () => {
     try {
@@ -37,12 +44,18 @@ export default function Receipts() {
 
   const fetchItems = async () => {
     try {
+      setItemsLoading(true);
+      setItemsError(null);
       const response = await fetch('/api/items');
       if (!response.ok) throw new Error('خطا در دریافت کالاها');
       const data = await response.json();
       setItems(data);
     } catch (err) {
-      console.error('Error fetching items:', err);
+      // An empty item list renders the form unusable, so surface the failure
+      // instead of silently leaving a dropdown that can never be filled.
+      setItemsError(err.message);
+    } finally {
+      setItemsLoading(false);
     }
   };
 
@@ -61,12 +74,17 @@ export default function Receipts() {
     if (!receiptLines[id]) {
       try {
         const res = await fetch(`/api/receipts/${id}`);
+        const data = await res.json();
         if (res.ok) {
-          const data = await res.json();
           setReceiptLines(prev => ({ ...prev, [id]: data.lines || [] }));
+          setLineErrors(prev => ({ ...prev, [id]: null }));
+        } else {
+          // Record the failure instead of leaving the cache empty: an empty
+          // cache rendered an unending "loading" message with no way to retry.
+          setLineErrors(prev => ({ ...prev, [id]: data?.error || 'خطا در دریافت ردیف‌ها' }));
         }
       } catch (err) {
-        console.error('Error fetching receipt lines:', err);
+        setLineErrors(prev => ({ ...prev, [id]: err.message }));
       }
     }
     setExpanded(prev => ({ ...prev, [id]: true }));
@@ -125,7 +143,7 @@ export default function Receipts() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           receipt_number: formData.receipt_number.trim(),
-          tarikh: formData.tarikh,
+          tarikh: normalizeJalaliDate(formData.tarikh),
           tavazihat: formData.tavazihat.trim(),
           lines: validLines.map(l => ({
             kala_id: l.kala_id,
@@ -143,12 +161,7 @@ export default function Receipts() {
 
       alert('رسید با موفقیت ثبت شد');
       setShowForm(false);
-      setFormData({
-        receipt_number: '',
-        tarikh: new Date().toISOString().split('T')[0],
-        tavazihat: '',
-        lines: [emptyLine()]
-      });
+      setFormData(blankForm());
       fetchReceipts();
     } catch (err) {
       setFormError(err.message);
@@ -235,7 +248,22 @@ export default function Receipts() {
                 {expanded[receipt.id] && (
                   <tr className="lines-row">
                     <td colSpan={7}>
-                      {(receiptLines[receipt.id] || []).length > 0 ? (
+                      {lineErrors[receipt.id] ? (
+                        <div className="lines-error">
+                          <span>⚠️ {lineErrors[receipt.id]}</span>
+                          <button
+                            type="button"
+                            className="btn-retry-lines"
+                            onClick={() => {
+                              setReceiptLines(prev => ({ ...prev, [receipt.id]: undefined }));
+                              setLineErrors(prev => ({ ...prev, [receipt.id]: null }));
+                              toggleExpand(receipt.id);
+                            }}
+                          >
+                            تلاش مجدد
+                          </button>
+                        </div>
+                      ) : (receiptLines[receipt.id] || []).length > 0 ? (
                         <table className="lines-table">
                           <thead>
                             <tr>
@@ -261,7 +289,7 @@ export default function Receipts() {
                           </tbody>
                         </table>
                       ) : (
-                        <div className="lines-loading">در حال بارگذاری ردیف‌ها...</div>
+                        <div className="lines-empty">ردیفی برای این رسید ثبت نشده است</div>
                       )}
                     </td>
                   </tr>
@@ -303,13 +331,16 @@ export default function Receipts() {
                   </div>
 
                   <div className="form-group">
-                    <label>تاریخ *</label>
+                    <label>تاریخ * (شمسی — مثال: 1405/07/01)</label>
                     <input
-                      type="date"
+                      type="text"
                       name="tarikh"
                       value={formData.tarikh}
                       onChange={handleHeaderChange}
                       required
+                      placeholder="YYYY/MM/DD"
+                      inputMode="numeric"
+                      dir="ltr"
                     />
                   </div>
                 </div>
@@ -337,19 +368,38 @@ export default function Receipts() {
                     <div key={idx} className="line-row">
                       <div className="line-idx">{(idx + 1).toLocaleString('fa-IR')}</div>
                       <div className="line-fields">
-                        <select
-                          name="kala_id"
-                          value={line.kala_id}
-                          onChange={(e) => handleLineChange(idx, e)}
-                          required
-                        >
-                          <option value="">انتخاب کالا</option>
-                          {items.map(item => (
-                            <option key={item.kod_kala} value={item.kod_kala}>
-                              {item.kod_kala} - {item.naam_kala}
+                        {itemsError ? (
+                          // A failed item fetch leaves an empty dropdown that can
+                          // never be filled, so say so instead of rendering a
+                          // silently unusable control.
+                          <div className="line-fields-error">
+                            <span>⚠️ {itemsError}</span>
+                            <button
+                              type="button"
+                              className="btn-retry-lines"
+                              onClick={fetchItems}
+                            >
+                              تلاش مجدد
+                            </button>
+                          </div>
+                        ) : (
+                          <select
+                            name="kala_id"
+                            value={line.kala_id}
+                            onChange={(e) => handleLineChange(idx, e)}
+                            required
+                            disabled={itemsLoading}
+                          >
+                            <option value="">
+                              {itemsLoading ? 'در حال بارگذاری کالاها...' : 'انتخاب کالا'}
                             </option>
-                          ))}
-                        </select>
+                            {items.map(item => (
+                              <option key={item.kod_kala} value={item.kod_kala}>
+                                {item.kod_kala} - {item.naam_kala}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                         <input
                           type="number"
                           name="maqdar"

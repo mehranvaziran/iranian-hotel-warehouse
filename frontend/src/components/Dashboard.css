@@ -46,6 +46,44 @@
 
 .dashboard-error {
   color: var(--error);
+  gap: 16px;
+}
+
+.dashboard-stale-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  padding: 10px 16px;
+  background: #fdf6e7;
+  border: 1px solid #eed9a8;
+  border-radius: 8px;
+  color: #8a6410;
+  font-size: 13px;
+}
+
+.btn-retry-banner,
+.btn-retry-dashboard {
+  border: 1px solid currentColor;
+  background: white;
+  color: var(--error);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 5px 14px;
+  white-space: nowrap;
+  transition: background 0.2s;
+}
+
+.btn-retry-banner {
+  color: #8a6410;
+  border-color: #d8b45c;
+}
+
+.btn-retry-banner:hover,
+.btn-retry-dashboard:hover {
+  background: #faf3e3;
 }
 
 @media (max-width: 1400px) {

@@ -31,15 +31,24 @@ export class InventoryService {
         ) as current_stock`,
       [itemCode, itemCode, itemCode]
     );
-    return result.current_stock || 0;
+    // `|| 0` would also mask a legitimate NaN from a corrupt row; Number()
+    // keeps a real zero while still never returning null to callers.
+    return Number(result?.current_stock ?? 0);
   }
 
   /**
-   * Get inventory for all items
+   * Get inventory for all items.
+   *
+   * Inactive items are deliberately included: an item can be retired from new
+   * transactions while still holding stock, and that stock must stay visible
+   * in inventory, reports and totals. Hiding it would silently underreport the
+   * warehouse. The `is_active` flag lets callers decide whether an item is
+   * still selectable for new documents.
+   *
    * @returns {Promise<Array>} Array of inventory records
    */
   async getAllInventory() {
-    const items = await this.db.all(`SELECT * FROM kala WHERE is_active = 1 ORDER BY naam_kala`);
+    const items = await this.db.all(`SELECT * FROM kala ORDER BY naam_kala`);
 
     const inventory = await Promise.all(
       items.map(async (item) => {
@@ -58,7 +67,7 @@ export class InventoryService {
           [item.kod_kala]
         );
 
-        const currentStock = baseline.qty + receipts.qty - issues.qty;
+        const currentStock = Number(baseline.qty) + Number(receipts.qty) - Number(issues.qty);
 
         return {
           ...item,
@@ -178,40 +187,47 @@ export class InventoryService {
   }
 
   /**
-   * Check if an issue can be fulfilled
-   * @param {string} itemCode - Item kod_kala
-   * @param {number} quantity - Quantity to issue
-   * @param {string} excludeIssueNum - Issue number to exclude (for edits)
-   * @returns {Promise<{canIssue: boolean, currentStock: number, message: string}>}
+   * Verify that a set of issue lines can be fulfilled *as one document*.
+   *
+   * Two rules that the previous per-line check broke:
+   *
+   * 1. Lines must be aggregated per item. A document carrying two lines of the
+   *    same item (say 8 and 7 against 10 in stock) passed the old check line
+   *    by line and then drove the item negative.
+   *
+   * 2. The check must run *inside* the caller's transaction. Checking before
+   *    BEGIN left a window in which two concurrent issues both passed against
+   *    the same stock. Called mid-transaction the SELECT sees uncommitted
+   *    writes, and SQLite's write lock serialises the two writers.
+   *
+   * @param {Array<{kala_id: string, maqdar: number}>} lines
+   * @returns {Promise<{canIssue: boolean, shortages: Array, message: string}>}
    */
-  async canIssue(itemCode, quantity, excludeIssueNum = null) {
-    let currentStock = await this.getCurrentStock(itemCode);
-
-    // If editing an existing issue, add back its quantity
-    if (excludeIssueNum) {
-      const existing = await this.db.get(
-        `SELECT COALESCE(SUM(il.maqdar), 0) as qty
-         FROM issue_lines il
-         JOIN issues i ON il.issue_id = i.id
-         WHERE i.issue_number = ? AND il.kala_id = ?`,
-        [excludeIssueNum, itemCode]
-      );
-      currentStock += existing.qty;
+  async checkIssueable(lines) {
+    const requested = new Map();
+    for (const line of lines) {
+      requested.set(line.kala_id, (requested.get(line.kala_id) || 0) + Number(line.maqdar));
     }
 
-    if (currentStock < quantity) {
+    const shortages = [];
+    for (const [kala_id, qty] of requested) {
+      const available = await this.getCurrentStock(kala_id);
+      if (available < qty) {
+        shortages.push({ kala_id, requested: qty, available });
+      }
+    }
+
+    if (shortages.length) {
       return {
         canIssue: false,
-        currentStock,
-        message: `موجودی ناکافی. موجودی فعلی: ${currentStock}`
+        shortages,
+        message: shortages
+          .map((s) => `${s.kala_id}: درخواست ${s.requested}، موجودی ${s.available}`)
+          .join('، '),
       };
     }
 
-    return {
-      canIssue: true,
-      currentStock,
-      message: 'OK'
-    };
+    return { canIssue: true, shortages: [], message: 'OK' };
   }
 
   /**

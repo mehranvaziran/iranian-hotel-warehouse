@@ -13,6 +13,7 @@ export default function Items() {
   const [cardex, setCardex] = useState(null);
   const [showCardex, setShowCardex] = useState(false);
   const [cardexLoading, setCardexLoading] = useState(false);
+  const [cardexError, setCardexError] = useState(null);
   const [editingItem, setEditingItem] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -185,13 +186,17 @@ export default function Items() {
     setShowDetails(false);
     setShowCardex(true);
     setCardex(null);
+    setCardexError(null);
     setCardexLoading(true);
     try {
       const res = await fetch(`/api/items/${encodeURIComponent(item.kod_kala)}/cardex`);
-      if (!res.ok) throw new Error('خطا در دریافت کارتکس');
-      setCardex(await res.json());
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || 'خطا در دریافت کارتکس');
+      setCardex(data);
     } catch (err) {
-      setCardex([]);
+      // An empty array here would be indistinguishable from "no movements",
+      // which hides a real server failure behind a reassuring message.
+      setCardexError(err.message);
     } finally {
       setCardexLoading(false);
     }
@@ -425,6 +430,17 @@ export default function Items() {
               </div>
               {cardexLoading ? (
                 <div className="loading">در حال بارگذاری کارتکس...</div>
+              ) : cardexError ? (
+                <div className="cardex-error">
+                  <span>⚠️ {cardexError}</span>
+                  <button
+                    type="button"
+                    className="btn-retry-cardex"
+                    onClick={() => selectedItem && handleViewCardex(selectedItem)}
+                  >
+                    تلاش مجدد
+                  </button>
+                </div>
               ) : cardex && cardex.length > 0 ? (
                 <div className="cardex-table-container">
                   <table className="cardex-table">

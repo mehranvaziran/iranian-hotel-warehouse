@@ -1,26 +1,33 @@
 import React, { useState, useEffect } from 'react';
+import { todayJalali, normalizeJalaliDate } from '../utils/jalali';
 import './Issues.css';
 
 const emptyLine = () => ({ kala_id: '', maqdar: '', vahed: '', tavazihat: '' });
+
+const blankForm = () => ({
+  issue_number: '',
+  // Jalali, never Gregorian — a Gregorian default would poison date filters.
+  tarikh: todayJalali(),
+  tahvil_gir: '',
+  mahl_masraf: '',
+  tavazihat: '',
+  lines: [emptyLine()]
+});
 
 export default function Issues() {
   const [issues, setIssues] = useState([]);
   const [expanded, setExpanded] = useState({});
   const [issueLines, setIssueLines] = useState({});
+  const [lineErrors, setLineErrors] = useState({});
   const [items, setItems] = useState([]);
+  const [itemsLoading, setItemsLoading] = useState(true);
+  const [itemsError, setItemsError] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
-  const [formData, setFormData] = useState({
-    issue_number: '',
-    tarikh: new Date().toISOString().split('T')[0],
-    tahvil_gir: '',
-    mahl_masraf: '',
-    tavazihat: '',
-    lines: [emptyLine()]
-  });
+  const [formData, setFormData] = useState(blankForm);
 
   const fetchIssues = async () => {
     try {
@@ -39,12 +46,18 @@ export default function Issues() {
 
   const fetchItems = async () => {
     try {
+      setItemsLoading(true);
+      setItemsError(null);
       const response = await fetch('/api/items');
       if (!response.ok) throw new Error('خطا در دریافت کالاها');
       const data = await response.json();
       setItems(data);
     } catch (err) {
-      console.error('Error fetching items:', err);
+      // An empty item list renders the form unusable, so surface the failure
+      // instead of silently leaving a dropdown that can never be filled.
+      setItemsError(err.message);
+    } finally {
+      setItemsLoading(false);
     }
   };
 
@@ -67,12 +80,17 @@ export default function Issues() {
     if (!issueLines[id]) {
       try {
         const res = await fetch(`/api/issues/${id}`);
+        const data = await res.json();
         if (res.ok) {
-          const data = await res.json();
           setIssueLines(prev => ({ ...prev, [id]: data.lines || [] }));
+          setLineErrors(prev => ({ ...prev, [id]: null }));
+        } else {
+          // Record the failure instead of leaving the cache empty: an empty
+          // cache rendered an unending "loading" message with no way to retry.
+          setLineErrors(prev => ({ ...prev, [id]: data?.error || 'خطا در دریافت ردیف‌ها' }));
         }
       } catch (err) {
-        console.error('Error fetching issue lines:', err);
+        setLineErrors(prev => ({ ...prev, [id]: err.message }));
       }
     }
     setExpanded(prev => ({ ...prev, [id]: true }));
@@ -152,7 +170,7 @@ export default function Issues() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           issue_number: formData.issue_number.trim(),
-          tarikh: formData.tarikh,
+          tarikh: normalizeJalaliDate(formData.tarikh),
           tahvil_gir: formData.tahvil_gir.trim(),
           mahl_masraf: formData.mahl_masraf.trim(),
           tavazihat: formData.tavazihat.trim(),
@@ -172,14 +190,7 @@ export default function Issues() {
 
       alert('حواله خروج با موفقیت ثبت شد');
       setShowForm(false);
-      setFormData({
-        issue_number: '',
-        tarikh: new Date().toISOString().split('T')[0],
-        tahvil_gir: '',
-        mahl_masraf: '',
-        tavazihat: '',
-        lines: [emptyLine()]
-      });
+      setFormData(blankForm());
       fetchIssues();
       fetchItems(); // refresh stock shown in the page
     } catch (err) {
@@ -271,7 +282,22 @@ export default function Issues() {
                 {expanded[issue.id] && (
                   <tr className="lines-row">
                     <td colSpan={8}>
-                      {(issueLines[issue.id] || []).length > 0 ? (
+                      {lineErrors[issue.id] ? (
+                        <div className="lines-error">
+                          <span>⚠️ {lineErrors[issue.id]}</span>
+                          <button
+                            type="button"
+                            className="btn-retry-lines"
+                            onClick={() => {
+                              setIssueLines(prev => ({ ...prev, [issue.id]: undefined }));
+                              setLineErrors(prev => ({ ...prev, [issue.id]: null }));
+                              toggleExpand(issue.id);
+                            }}
+                          >
+                            تلاش مجدد
+                          </button>
+                        </div>
+                      ) : (issueLines[issue.id] || []).length > 0 ? (
                         <table className="lines-table">
                           <thead>
                             <tr>
@@ -297,7 +323,7 @@ export default function Issues() {
                           </tbody>
                         </table>
                       ) : (
-                        <div className="lines-loading">در حال بارگذاری ردیف‌ها...</div>
+                        <div className="lines-empty">ردیفی برای این حواله ثبت نشده است</div>
                       )}
                     </td>
                   </tr>
@@ -339,13 +365,16 @@ export default function Issues() {
                   </div>
 
                   <div className="form-group">
-                    <label>تاریخ *</label>
+                    <label>تاریخ * (شمسی — مثال: 1405/07/01)</label>
                     <input
-                      type="date"
+                      type="text"
                       name="tarikh"
                       value={formData.tarikh}
                       onChange={handleHeaderChange}
                       required
+                      placeholder="YYYY/MM/DD"
+                      inputMode="numeric"
+                      dir="ltr"
                     />
                   </div>
                 </div>
@@ -402,19 +431,38 @@ export default function Issues() {
                       <div key={idx} className="line-row">
                         <div className="line-idx">{(idx + 1).toLocaleString('fa-IR')}</div>
                         <div className="line-fields">
-                          <select
-                            name="kala_id"
-                            value={line.kala_id}
-                            onChange={(e) => handleLineChange(idx, e)}
-                            required
-                          >
-                            <option value="">انتخاب کالا</option>
-                            {items.map(item => (
-                              <option key={item.kod_kala} value={item.kod_kala}>
-                                {item.kod_kala} - {item.naam_kala} (موجودی: {Number(item.current_stock || 0).toLocaleString('fa-IR')})
+                          {itemsError ? (
+                            // A failed item fetch leaves an empty dropdown that can
+                            // never be filled, so say so instead of rendering a
+                            // silently unusable control.
+                            <div className="line-fields-error">
+                              <span>⚠️ {itemsError}</span>
+                              <button
+                                type="button"
+                                className="btn-retry-lines"
+                                onClick={fetchItems}
+                              >
+                                تلاش مجدد
+                              </button>
+                            </div>
+                          ) : (
+                            <select
+                              name="kala_id"
+                              value={line.kala_id}
+                              onChange={(e) => handleLineChange(idx, e)}
+                              required
+                              disabled={itemsLoading}
+                            >
+                              <option value="">
+                                {itemsLoading ? 'در حال بارگذاری کالاها...' : 'انتخاب کالا'}
                               </option>
-                            ))}
-                          </select>
+                              {items.map(item => (
+                                <option key={item.kod_kala} value={item.kod_kala}>
+                                  {item.kod_kala} - {item.naam_kala} (موجودی: {Number(item.current_stock || 0).toLocaleString('fa-IR')})
+                                </option>
+                              ))}
+                            </select>
+                          )}
                           <input
                             type="number"
                             name="maqdar"
