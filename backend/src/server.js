@@ -3,7 +3,8 @@ import cors from 'cors';
 import { initDatabase } from './db.js';
 import { InventoryService } from './services/inventoryService.js';
 import { receiptHtml, issueHtml, cardexHtml, inventoryHtml } from './printTemplates.js';
-import { assertJalaliDate } from './utils/jalali.js';
+import { todayJalali } from './utils/jalali.js';
+import { reject } from './utils/httpError.js';
 
 const app = express();
 // Overridable so the test suite can run the API on its own port.
@@ -30,6 +31,24 @@ const requireDB = (req, res, next) => {
   }
   next();
 };
+
+/**
+ * Translate a domain rejection into an HTTP response. Anything carrying a
+ * statusCode is a client problem the service already phrased in Persian; a lock
+ * contest that timed out is a conflict rather than a server fault.
+ */
+function sendDomainError(res, error, context) {
+  if (error.statusCode) {
+    return res.status(error.statusCode).json({ error: error.message });
+  }
+  if (/database is locked|SQLITE_BUSY/i.test(error.message)) {
+    return res.status(409).json({
+      error: 'سند دیگری هم‌زمان در حال ثبت است؛ لطفاً دوباره تلاش کنید',
+    });
+  }
+  console.error(`Error ${context}:`, error);
+  return res.status(500).json({ error: error.message });
+}
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -238,70 +257,25 @@ app.get('/api/receipts/:id', requireDB, async (req, res) => {
 
 // Create receipt (transactional multi-line)
 app.post('/api/receipts', requireDB, async (req, res) => {
+  const { receipt_number, tarikh, tavazihat, lines } = req.body;
+
+  if (!receipt_number || !tarikh || !lines || !Array.isArray(lines) || lines.length === 0) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
   try {
-    const { receipt_number, tarikh, tavazihat, lines } = req.body;
-
-    if (!receipt_number || !tarikh || !lines || !Array.isArray(lines) || lines.length === 0) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    // The business date is Jalali; a Gregorian string here would poison every
-    // date filter and date-ordered list. Reject it at the boundary.
-    try {
-      assertJalaliDate(tarikh, 'رسید');
-    } catch (err) {
-      return res.status(err.statusCode).json({ error: err.message });
-    }
-
-    // Validate all lines
-    for (const line of lines) {
-      if (!line.kala_id || !line.maqdar || line.maqdar <= 0) {
-        return res.status(400).json({ error: 'Invalid line data' });
-      }
-    }
-
-    await db.run('BEGIN TRANSACTION');
-
-    try {
-      // Insert receipt header
-      let receiptResult;
-      try {
-        receiptResult = await db.run(
-          `INSERT INTO receipts (receipt_number, tarikh, tavazihat) VALUES (?, ?, ?)`,
-          [receipt_number, tarikh, tavazihat || '']
-        );
-      } catch (err) {
-        await db.run('ROLLBACK');
-        if (err.message.includes('UNIQUE')) {
-          return res.status(400).json({ error: `شماره رسید ${receipt_number} قبلاً ثبت شده است` });
-        }
-        throw err;
-      }
-
-      // Insert lines
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        await db.run(
-          `INSERT INTO receipt_lines (receipt_id, kala_id, maqdar, vahed, tavazihat, radif)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [receiptResult.lastID, line.kala_id, line.maqdar, line.vahed || '', line.tavazihat || '', i + 1]
-        );
-      }
-
-      await db.run('COMMIT');
-
-      res.json({
-        id: receiptResult.lastID,
-        receipt_number,
-        message: 'Receipt created successfully'
-      });
-    } catch (err) {
-      await db.run('ROLLBACK');
-      throw err;
-    }
+    // The service validates the date, resolves every line against the Item
+    // Master (unit, existence, active state) and writes the whole document
+    // under one immediate transaction.
+    const result = await inventoryService.createReceipt({
+      receipt_number,
+      tarikh,
+      tavazihat,
+      lines,
+    });
+    res.json({ ...result, message: 'Receipt created successfully' });
   } catch (error) {
-    console.error('Error creating receipt:', error);
-    res.status(500).json({ error: error.message });
+    sendDomainError(res, error, 'creating receipt');
   }
 });
 
@@ -378,86 +352,26 @@ app.get('/api/issues/:id', requireDB, async (req, res) => {
 
 // Create issue (transactional multi-line with stock validation)
 app.post('/api/issues', requireDB, async (req, res) => {
+  const { issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat, lines } = req.body;
+
+  if (!issue_number || !tarikh || !lines || !Array.isArray(lines) || lines.length === 0) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
   try {
-    const { issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat, lines } = req.body;
-
-    if (!issue_number || !tarikh || !lines || !Array.isArray(lines) || lines.length === 0) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
-
-    // The business date is Jalali; reject a Gregorian string at the boundary.
-    try {
-      assertJalaliDate(tarikh, 'حواله');
-    } catch (err) {
-      return res.status(err.statusCode).json({ error: err.message });
-    }
-
-    // Validate all lines
-    for (const line of lines) {
-      if (!line.kala_id || !line.maqdar || line.maqdar <= 0) {
-        return res.status(400).json({ error: 'Invalid line data' });
-      }
-    }
-
-    await db.run('BEGIN TRANSACTION');
-
-    try {
-      // Verify stock inside the transaction, after BEGIN: the check then sees
-      // uncommitted writes and the write lock serialises concurrent issues.
-      // Lines are aggregated per item, so two lines of the same item in one
-      // document cannot jointly over-issue.
-      const check = await inventoryService.checkIssueable(lines);
-      if (!check.canIssue) {
-        await db.run('ROLLBACK');
-        const names = await Promise.all(
-          check.shortages.map(async (s) => {
-            const item = await db.get(`SELECT naam_kala FROM kala WHERE kod_kala = ?`, [s.kala_id]);
-            return `${item?.naam_kala || s.kala_id} (درخواست ${s.requested}، موجودی ${s.available})`;
-          })
-        );
-        return res.status(400).json({ error: `موجودی ناکافی برای: ${names.join('، ')}` });
-      }
-
-      // Insert issue header
-      let issueResult;
-      try {
-        issueResult = await db.run(
-          `INSERT INTO issues (issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat)
-           VALUES (?, ?, ?, ?, ?)`,
-          [issue_number, tarikh, tahvil_gir || '', mahl_masraf || '', tavazihat || '']
-        );
-      } catch (err) {
-        await db.run('ROLLBACK');
-        if (err.message.includes('UNIQUE')) {
-          return res.status(400).json({ error: `شماره حواله ${issue_number} قبلاً ثبت شده است` });
-        }
-        throw err;
-      }
-
-      // Insert lines
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i];
-        await db.run(
-          `INSERT INTO issue_lines (issue_id, kala_id, maqdar, vahed, tavazihat, radif)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [issueResult.lastID, line.kala_id, line.maqdar, line.vahed || '', line.tavazihat || '', i + 1]
-        );
-      }
-
-      await db.run('COMMIT');
-
-      res.json({
-        id: issueResult.lastID,
-        issue_number,
-        message: 'Issue created successfully'
-      });
-    } catch (err) {
-      await db.run('ROLLBACK');
-      throw err;
-    }
+    // Stock is verified inside the service's immediate transaction, together
+    // with the Item Master rules, so a rejected issue leaves no document behind.
+    const result = await inventoryService.createIssue({
+      issue_number,
+      tarikh,
+      tahvil_gir,
+      mahl_masraf,
+      tavazihat,
+      lines,
+    });
+    res.json({ ...result, message: 'Issue created successfully' });
   } catch (error) {
-    console.error('Error creating issue:', error);
-    res.status(500).json({ error: error.message });
+    sendDomainError(res, error, 'creating issue');
   }
 });
 
@@ -550,31 +464,42 @@ app.post('/api/items', requireDB, async (req, res) => {
 });
 
 // Update item
+//
+// `kod_kala`, `goh` and `vahed` are locked once the item exists: they identify
+// it in every document and every report, and the unit is what document lines
+// store. The editable fields are name, subgroup, minimum stock, note and the
+// active/inactive state. The frontend renders group and unit read-only; the
+// service enforces it regardless of who the caller is.
 app.put('/api/items/:kod_kala', requireDB, async (req, res) => {
+  const { naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi, tavazihat, is_active } = req.body;
+
+  const existing = await db.get(`SELECT * FROM kala WHERE kod_kala = ?`, [req.params.kod_kala]);
+  if (!existing) {
+    return res.status(404).json({ error: 'Item not found' });
+  }
+
+  // A client that sends the locked fields must send them back unchanged. The
+  // values already in the Item Master win either way, but a differing value is
+  // reported instead of silently ignored, so a stale form cannot look like a
+  // successful edit.
+  if (goh !== undefined && String(goh ?? '').trim() !== String(existing.goh ?? '').trim()) {
+    return res.status(400).json({ error: 'گروه کالا پس از ثبت قابل تغییر نیست' });
+  }
+  if (vahed !== undefined && String(vahed ?? '').trim() !== String(existing.vahed ?? '').trim()) {
+    return res.status(400).json({ error: 'واحد کالا پس از ثبت قابل تغییر نیست' });
+  }
+
   try {
-    const { naam_kala, goh, zirgoh, vahed, hadd_aqal_mojoodi, tavazihat } = req.body;
-
-    if (!naam_kala) {
-      return res.status(400).json({ error: 'نام کالا الزامی است' });
-    }
-
-    const existing = await db.get(`SELECT kod_kala FROM kala WHERE kod_kala = ?`, [req.params.kod_kala]);
-    if (!existing) {
-      return res.status(404).json({ error: 'Item not found' });
-    }
-
-    await db.run(
-      `UPDATE kala
-       SET naam_kala = ?, goh = ?, zirgoh = ?, vahed = ?, hadd_aqal_mojoodi = ?, tavazihat = ?,
-           updated_at = CURRENT_TIMESTAMP
-       WHERE kod_kala = ?`,
-      [naam_kala, goh || '', zirgoh || '', vahed || '', hadd_aqal_mojoodi || 0, tavazihat || '', req.params.kod_kala]
-    );
-
+    await inventoryService.updateItem(req.params.kod_kala, {
+      naam_kala,
+      zirgoh,
+      hadd_aqal_mojoodi,
+      tavazihat,
+      is_active,
+    });
     res.json({ message: 'Item updated successfully' });
   } catch (error) {
-    console.error('Error updating item:', error);
-    res.status(500).json({ error: error.message });
+    sendDomainError(res, error, 'updating item');
   }
 });
 
@@ -630,7 +555,9 @@ app.get('/api/reports/inventory', requireDB, async (req, res) => {
     const group = req.query.group;
     const filtered = group && group !== 'all' ? inventory.filter(i => i.goh === group) : inventory;
     res.json({
-      reportDate: new Date().toISOString().split('T')[0],
+      // A business date the user reads must be Jalali; a Gregorian "today"
+      // here would never fall inside any Jalali range filter.
+      reportDate: todayJalali(),
       group: group && group !== 'all' ? group : 'همه گروه‌ها',
       totals: filtered.reduce(
         (t, i) => ({
@@ -774,7 +701,7 @@ app.get('/api/print/inventory', requireDB, async (req, res) => {
 
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(inventoryHtml(filtered, {
-      reportDate: new Date().toISOString().split('T')[0],
+      reportDate: todayJalali(),
       group: group && group !== 'all' ? group : 'همه گروه‌ها',
     }));
   } catch (error) {

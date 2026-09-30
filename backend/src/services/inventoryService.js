@@ -7,6 +7,9 @@
  * Business Rule: Current Stock = Baseline + Receipts - Issues
  */
 
+import { assertJalaliDate } from '../utils/jalali.js';
+import { reject } from '../utils/httpError.js';
+
 export class InventoryService {
   constructor(db) {
     this.db = db;
@@ -228,6 +231,219 @@ export class InventoryService {
     }
 
     return { canIssue: true, shortages: [], message: 'OK' };
+  }
+
+  /**
+   * Resolve document lines against the Item Master.
+   *
+   * The Item Master is authoritative for the unit of measure: whatever the
+   * client sends in `line.vahed` is discarded and the master's `vahed` is what
+   * gets stored. The unit is immutable once an item exists, so the master value
+   * can never disagree with the documents that reference it — a document line
+   * carrying its own unit would let a receipt and an issue for the same item be
+   * recorded in different units.
+   *
+   * Also enforces the catalog rules a line alone cannot check:
+   *  - the item must exist (a bare foreign-key failure would surface as a 500);
+   *  - the item must be active, because a retired item may still hold stock but
+   *    must not be usable in *new* documents.
+   *
+   * Must be called inside the caller's transaction so these checks see the same
+   * snapshot as the write.
+   *
+   * @param {Array} lines - [{ kala_id, maqdar, vahed?, tavazihat? }]
+   * @returns {Promise<Array>} Lines with the authoritative `vahed` attached.
+   */
+  async resolveDocumentLines(lines) {
+    const resolved = [];
+    for (const line of lines) {
+      const qty = Number(line.maqdar);
+      if (!line.kala_id || !Number.isFinite(qty) || qty <= 0) {
+        throw reject('ردیف سند نامعتبر است (کد کالا و مقدار مثبت الزامی است)');
+      }
+
+      const item = await this.db.get(
+        `SELECT kod_kala, vahed, is_active FROM kala WHERE kod_kala = ?`,
+        [line.kala_id]
+      );
+
+      if (!item) {
+        throw reject(`کالای «${line.kala_id}» در تعریف کالاها وجود ندارد`);
+      }
+
+      if (item.is_active !== 1) {
+        throw reject(
+          `کالای «${line.kala_id}» غیرفعال است و نمی‌تواند در سند جدید وارد شود`
+        );
+      }
+
+      resolved.push({
+        kala_id: line.kala_id,
+        maqdar: qty,
+        // The Item Master unit, not the client's.
+        vahed: item.vahed ?? '',
+        tavazihat: line.tavazihat ?? '',
+      });
+    }
+    return resolved;
+  }
+
+  /**
+   * Create a multi-line receipt atomically.
+   *
+   * `BEGIN IMMEDIATE` takes the write lock *before* any SELECT, so the whole
+   * validate-then-write span is a single critical section: two writers trying to
+   * spend or book the same stock serialise instead of both reading a stale
+   * snapshot and both succeeding.
+   *
+   * @returns {Promise<{ id: number, receipt_number: string }>}
+   */
+  async createReceipt({ receipt_number, tarikh, tavazihat, lines }) {
+    assertJalaliDate(tarikh, 'رسید');
+
+    await this.db.run('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      const resolved = await this.resolveDocumentLines(lines);
+
+      const existing = await this.db.get(
+        `SELECT id FROM receipts WHERE receipt_number = ?`,
+        [receipt_number]
+      );
+      if (existing) {
+        throw reject(`شماره رسید ${receipt_number} قبلاً ثبت شده است`);
+      }
+
+      const header = await this.db.run(
+        `INSERT INTO receipts (receipt_number, tarikh, tavazihat) VALUES (?, ?, ?)`,
+        [receipt_number, tarikh, tavazihat || '']
+      );
+
+      await this.#insertLines('receipt_lines', 'receipt_id', header.lastID, resolved);
+
+      await this.db.run('COMMIT');
+      return { id: header.lastID, receipt_number };
+    } catch (err) {
+      await this.#rollback();
+      throw err;
+    }
+  }
+
+  /**
+   * Create a multi-line issue atomically, with stock validated inside the
+   * transaction.
+   *
+   * The stock check runs after `BEGIN IMMEDIATE`, so it sees committed stock and
+   * no other writer can alter that stock until this document is committed or
+   * rolled back. A rejected document leaves nothing behind — the header and its
+   * lines commit together or not at all.
+   *
+   * @returns {Promise<{ id: number, issue_number: string }>}
+   */
+  async createIssue({ issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat, lines }) {
+    assertJalaliDate(tarikh, 'حواله');
+
+    await this.db.run('BEGIN IMMEDIATE TRANSACTION');
+    try {
+      const resolved = await this.resolveDocumentLines(lines);
+
+      const check = await this.checkIssueable(resolved);
+      if (!check.canIssue) {
+        const names = [];
+        for (const s of check.shortages) {
+          const item = await this.db.get(
+            `SELECT naam_kala FROM kala WHERE kod_kala = ?`,
+            [s.kala_id]
+          );
+          names.push(
+            `${item?.naam_kala || s.kala_id} (درخواست ${s.requested}، موجودی ${s.available})`
+          );
+        }
+        throw reject(`موجودی ناکافی برای: ${names.join('، ')}`);
+      }
+
+      const existing = await this.db.get(
+        `SELECT id FROM issues WHERE issue_number = ?`,
+        [issue_number]
+      );
+      if (existing) {
+        throw reject(`شماره حواله ${issue_number} قبلاً ثبت شده است`);
+      }
+
+      const header = await this.db.run(
+        `INSERT INTO issues (issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat)
+         VALUES (?, ?, ?, ?, ?)`,
+        [issue_number, tarikh, tahvil_gir || '', mahl_masraf || '', tavazihat || '']
+      );
+
+      await this.#insertLines('issue_lines', 'issue_id', header.lastID, resolved);
+
+      await this.db.run('COMMIT');
+      return { id: header.lastID, issue_number };
+    } catch (err) {
+      await this.#rollback();
+      throw err;
+    }
+  }
+
+  /** Write the resolved lines of one document, numbered by their position. */
+  async #insertLines(table, headerColumn, headerId, lines) {
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      await this.db.run(
+        `INSERT INTO ${table} (${headerColumn}, kala_id, maqdar, vahed, tavazihat, radif)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [headerId, line.kala_id, line.maqdar, line.vahed, line.tavazihat, i + 1]
+      );
+    }
+  }
+
+  /**
+   * Roll back, tolerating an already-ended transaction. A thrown error here
+   * would swallow the original reason the caller is rolling back.
+   */
+  async #rollback() {
+    try {
+      await this.db.run('ROLLBACK');
+    } catch {
+      /* not in a transaction anymore */
+    }
+  }
+
+  /**
+   * Apply an Item Master edit.
+   *
+   * `goh` and `vahed` are locked after creation: they identify the item across
+   * every document and every report, and the unit is what document lines store.
+   * A client may send them back unchanged; a client may not change them.
+   *
+   * Editable: naam_kala, zirgoh, hadd_aqal_mojoodi, tavazihat, is_active.
+   *
+   * @returns {Promise<void>}
+   */
+  async updateItem(kod_kala, { naam_kala, zirgoh, hadd_aqal_mojoodi, tavazihat, is_active }) {
+    if (!naam_kala) throw reject('نام کالا الزامی است');
+
+    const existing = await this.db.get(
+      `SELECT * FROM kala WHERE kod_kala = ?`,
+      [kod_kala]
+    );
+    if (!existing) throw reject('کالای مورد نظر یافت نشد', 404);
+
+    const active = is_active === undefined ? existing.is_active : (is_active ? 1 : 0);
+
+    await this.db.run(
+      `UPDATE kala
+       SET naam_kala = ?, zirgoh = ?, hadd_aqal_mojoodi = ?, tavazihat = ?, is_active = ?
+       WHERE kod_kala = ?`,
+      [
+        naam_kala,
+        zirgoh ?? existing.zirgoh ?? '',
+        hadd_aqal_mojoodi ?? existing.hadd_aqal_mojoodi ?? 0,
+        tavazihat ?? existing.tavazihat ?? '',
+        active,
+        kod_kala,
+      ]
+    );
   }
 
   /**

@@ -6,7 +6,10 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "dev": "node --watch src/server.js"
+    "dev": "node --watch src/server.js",
+    "test": "node --test ./tests/*.test.js && node ../tests/api-test.js",
+    "test:unit": "node --test ./tests/*.test.js",
+    "test:api": "node ../tests/api-test.js"
   },
   "keywords": [],
   "author": "",

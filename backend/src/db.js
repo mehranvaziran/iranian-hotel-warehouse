@@ -10,19 +10,55 @@ const dbDir = path.join(__dirname, '..', '..', 'data');
 // instead of mutating the live warehouse.db.
 const dbPath = process.env.WAREHOUSE_DB_PATH || path.join(dbDir, 'warehouse.db');
 
-export async function initDatabase() {
-  mkdirSync(path.dirname(dbPath), { recursive: true });
+/**
+ * Open and initialise the database.
+ *
+ * @param {string} [explicitPath] - Override the env-var/default path. Lets a
+ *   caller (an explicit tool, a test) name the database it means instead of
+ *   relying on the env var being set before this module was first imported.
+ */
+export async function initDatabase(explicitPath) {
+  const target = explicitPath || dbPath;
+  mkdirSync(path.dirname(target), { recursive: true });
 
   const db = await open({
-    filename: dbPath,
+    filename: target,
     driver: sqlite3.Database,
   });
 
-  await db.exec('PRAGMA foreign_keys = ON');
-
+  // A database that already has the catalog was seeded before; leave its data
+  // alone. Checked before createSchema() because every table it creates is
+  // IF NOT EXISTS, so afterwards a fresh and a populated database look alike.
   const tableCheck = await db.get(
     "SELECT name FROM sqlite_master WHERE type='table' AND name='kala'"
   );
+
+  await createSchema(db);
+
+  if (!tableCheck) {
+    await loadInitialData(db);
+  }
+  // An existing database is left exactly as it is. Startup never deletes
+  // anything: the legacy `vorood`/`khorooj` schema conversion is a one-off that
+  // belongs in the explicit `src/scripts/migrate-legacy-schema.js` tool, not on
+  // the boot path of every server.
+
+  return db;
+}
+
+/**
+ * Create the schema and its triggers on a connection. Idempotent, and the only
+ * schema-creating code in the system. Exported so an explicit tool can open a
+ * specific database and build the schema there without having to go through the
+ * env-var-derived default path.
+ */
+export async function createSchema(db) {
+  await db.exec('PRAGMA foreign_keys = ON');
+  // Wait for the write lock instead of failing on contact. A concurrent writer
+  // is expected — `BEGIN IMMEDIATE` serialises document creation — and losing
+  // the lock contest with a hard SQLITE_BUSY would turn a legitimately queued
+  // request into a 500.
+  await db.exec('PRAGMA busy_timeout = 5000');
 
   // Create new schema tables
   await db.exec(`
@@ -126,121 +162,6 @@ export async function initDatabase() {
       UPDATE issues SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
     END;
   `);
-
-  if (tableCheck) {
-    await migrateToNewSchema(db);
-  } else {
-    await loadInitialData(db);
-  }
-
-  return db;
-}
-
-async function migrateToNewSchema(db) {
-  console.log('Checking schema migration...');
-
-  // Check kala columns
-  const cols = await db.all(`PRAGMA table_info(kala)`);
-  const hasMojoodi = cols.some(c => c.name === 'mojoodi_fael');
-  const hasActive = cols.some(c => c.name === 'is_active');
-
-  if (hasMojoodi || !hasActive) {
-    console.log('Migrating kala table...');
-    // Already migrated manually, skip
-    console.log('✅ kala table ready');
-  }
-
-  // Check for old tables
-  const hasVorood = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='vorood'");
-
-  if (!hasVorood) {
-    console.log('✅ No migration needed');
-    return;
-  }
-
-  const receiptCount = await db.get(`SELECT COUNT(*) as c FROM receipts`);
-
-  if (receiptCount.c > 0) {
-    console.log('Data already migrated, cleaning up old tables...');
-    await db.exec(`DROP TABLE IF EXISTS vorood`);
-    await db.exec(`DROP TABLE IF EXISTS khorooj`);
-    console.log('✅ Migration complete');
-    return;
-  }
-
-  console.log('Migrating documents...');
-
-  // Migrate receipts
-  const oldReceipts = await db.all(`
-    SELECT DISTINCT receipt_num, tarikh, tavazihat
-    FROM vorood WHERE receipt_num IS NOT NULL
-    ORDER BY tarikh, receipt_num
-  `);
-
-  for (const r of oldReceipts) {
-    const res = await db.run(
-      `INSERT INTO receipts (receipt_number, tarikh, tavazihat) VALUES (?, ?, ?)`,
-      [r.receipt_num, r.tarikh, r.tavazihat || '']
-    );
-
-    const lines = await db.all(
-      `SELECT kala_id, maqdar, vahed, tavazihat, radif
-       FROM vorood WHERE receipt_num = ?
-       ORDER BY COALESCE(radif, 999), id`,
-      [r.receipt_num]
-    );
-
-    for (let i = 0; i < lines.length; i++) {
-      await db.run(
-        `INSERT INTO receipt_lines (receipt_id, kala_id, maqdar, vahed, tavazihat, radif)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-        [res.lastID, lines[i].kala_id, lines[i].maqdar, lines[i].vahed, lines[i].tavazihat || '', i + 1]
-      );
-    }
-  }
-
-  console.log(`✅ Migrated ${oldReceipts.length} receipts`);
-
-  // Migrate issues
-  const hasKhorooj = await db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='khorooj'");
-
-  if (hasKhorooj) {
-    const oldIssues = await db.all(`
-      SELECT DISTINCT issue_num, tarikh, tahvil_gir, mahl_masraf, tavazihat
-      FROM khorooj WHERE issue_num IS NOT NULL
-      ORDER BY tarikh, issue_num
-    `);
-
-    for (const iss of oldIssues) {
-      const res = await db.run(
-        `INSERT INTO issues (issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat)
-         VALUES (?, ?, ?, ?, ?)`,
-        [iss.issue_num, iss.tarikh, iss.tahvil_gir || '', iss.mahl_masraf || '', iss.tavazihat || '']
-      );
-
-      const lines = await db.all(
-        `SELECT kala_id, maqdar, vahed, tavazihat, radif
-         FROM khorooj WHERE issue_num = ?
-         ORDER BY COALESCE(radif, 999), id`,
-        [iss.issue_num]
-      );
-
-      for (let i = 0; i < lines.length; i++) {
-        await db.run(
-          `INSERT INTO issue_lines (issue_id, kala_id, maqdar, vahed, tavazihat, radif)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          [res.lastID, lines[i].kala_id, lines[i].maqdar, lines[i].vahed, lines[i].tavazihat || '', i + 1]
-        );
-      }
-    }
-
-    console.log(`✅ Migrated ${oldIssues.length} issues`);
-  }
-
-  // Drop old tables
-  await db.exec(`DROP TABLE IF EXISTS vorood`);
-  await db.exec(`DROP TABLE IF EXISTS khorooj`);
-  console.log('✅ Migration complete');
 }
 
 async function loadInitialData(db) {

@@ -5,6 +5,8 @@
  * (Ctrl+P) and for "Save as PDF". No external runtime dependency is required.
  */
 
+import { todayJalali } from './utils/jalali.js';
+
 const HOTEL_TITLE = 'هتل ایرانیان';
 const HOTEL_SUBTITLE = 'پروژه توسعه هتل ایرانیان – واحد انبار';
 const REPORT_FOOTER = 'سامانه مدیریت انبار هتل ایرانیان';
@@ -160,7 +162,7 @@ function printLayout({ title, number, bodyHtml, signatures = '' }) {
     </div>
     ${bodyHtml}
     ${signatures}
-    <div class="doc-footer">${REPORT_FOOTER} – تاریخ چاپ: ${toPersian(new Date().toLocaleDateString('en-CA'))}</div>
+    <div class="doc-footer">${REPORT_FOOTER} – تاریخ چاپ: ${toPersian(todayJalali())}</div>
   </div>
   <script>
     window.addEventListener('load', function () {
