@@ -28,8 +28,12 @@ while (Atomics.load(flags, 0) < 2) {
 }
 
 try {
+  // A real document number: `{R|H}-{Jalali YYMMDD}-{seq}`. The two contestants
+  // use different sequences (the tag is `round-index`, so `0-1` becomes `01`),
+  // so the number is never what decides which one wins — the stock check is.
+  const seq = String(tag).replace('-', '');
   const result = await service.createIssue({
-    issue_number: `DUEL-${tag}`,
+    issue_number: `H-050701-${seq}`,
     tarikh: '1405/07/01',
     lines: [{ kala_id: code, maqdar: stake, vahed: 'عدد' }],
   });

@@ -46,18 +46,53 @@ button {
   transition: all 0.2s ease;
 }
 
-input, select {
-  background-color: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--text-primary);
+/* The form controls of this app all sit on the pages' white surfaces — the
+ * dark-theme text colour of the chrome (sidebar, header, dashboard panels) does
+ * not belong in them. Setting the *page* colour here once keeps every typed
+ * value readable, including the document-number sequence and every quantity,
+ * without a per-field override; the dark search field in the header sets its own
+ * colours explicitly and so keeps them.
+ *
+ * This is the single place a control's chrome is decided, and it is written at
+ * element specificity on purpose: a class that *means* something — the header's
+ * dark search, an invalid quantity, a locked unit — outranks it and keeps its
+ * own look, while the rules that used to re-declare a faint border on each form
+ * are gone, so a field is visibly a field on any surface it lands on. A light
+ * fill that stands apart from the white cards behind it, a border dark enough to
+ * be seen at a glance, a brightening fill plus a ring on focus, and a dimmed fill
+ * when the field is not editable. */
+input, select, textarea {
+  background-color: #f7f9fb;
+  border: 1.5px solid #93a1b3;
+  color: #1a1a1a;
   padding: 8px 12px;
-  border-radius: 4px;
+  border-radius: 6px;
   font-family: inherit;
   font-size: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
 }
 
-input:focus, select:focus {
+input:hover, select:hover, textarea:hover {
+  border-color: #75839a;
+}
+
+input:focus, select:focus, textarea:focus {
   outline: none;
+  background-color: #ffffff;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(228, 88, 38, 0.1);
+  box-shadow: 0 0 0 3px rgba(228, 88, 38, 0.18);
+}
+
+/* A field that cannot be edited looks like one: the locked group and unit on an
+ * existing item, and the unit on a document line, which the Item Master owns. */
+input:disabled, select:disabled, textarea:disabled,
+input[readonly], select[readonly], textarea[readonly] {
+  background-color: #e9edf2;
+  color: #5f6b7a;
+  cursor: not-allowed;
+  border-color: #b6c0cd;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #616e7d;
 }

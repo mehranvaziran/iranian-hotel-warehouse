@@ -12,7 +12,9 @@
 .reports-header h1 {
   font-size: 28px;
   font-weight: 600;
-  color: #1a1a1a;
+  /* The page header sits on the dark content area, not on the white report
+   * cards below it — the dark text colour used to make it invisible. */
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -99,20 +101,15 @@
   color: #555;
 }
 
+/* Sizing only — the fill, border and focus ring come from the single input rule
+ * in index.css, so the report filters read as the same control every other form
+ * uses. */
 .report-filters select,
 .report-filters input {
   padding: 9px 12px;
-  border: 1px solid #dcdcdc;
-  border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
   min-width: 150px;
-}
-
-.report-filters select:focus,
-.report-filters input:focus {
-  outline: none;
-  border-color: #4a90e2;
 }
 
 .btn-run {

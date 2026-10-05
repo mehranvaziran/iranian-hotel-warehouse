@@ -1,5 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { todayJalali, normalizeJalaliDate } from '../utils/jalali';
+import React, { useState, useEffect, useCallback } from 'react';
+import { todayJalali, normalizeJalaliDate, isValidJalaliDate } from '../utils/jalali';
+import {
+  ISSUE_PREFIX,
+  docNumberHead,
+  docNumberSequence,
+  formatDocNumber,
+  isValidDocNumber,
+  suggestDocSequence,
+  fetchUnitPrecision,
+  decimalsForUnit,
+  stepForDecimals,
+} from '../utils/docNumber';
+import {
+  isBlankLine,
+  lineProblems,
+  validateDocumentLines,
+} from '../utils/documentLines';
 import './Issues.css';
 
 const emptyLine = () => ({ kala_id: '', maqdar: '', vahed: '', tavazihat: '' });
@@ -28,6 +44,9 @@ export default function Issues() {
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState(null);
   const [formData, setFormData] = useState(blankForm);
+  // Unit precision is held in the database; the form's `step` comes from these
+  // rows so a unit that gains decimals needs no change here.
+  const [precision, setPrecision] = useState(new Map());
 
   const fetchIssues = async () => {
     try {
@@ -64,7 +83,45 @@ export default function Issues() {
   useEffect(() => {
     fetchIssues();
     fetchItems();
+    fetchUnitPrecision().then(setPrecision).catch(() => { /* step falls back to whole numbers */ });
   }, []);
+
+  /**
+   * Offer the document number for the date the form is using. The head is
+   * derived from the date and the sequence is suggested for it, so the number and
+   * the date can never disagree — changing the date rebuilds both. Only the
+   * sequence is editable; the head is shown as read-only context.
+   */
+  const suggestNumber = useCallback(async (tarikh) => {
+    if (!isValidJalaliDate(normalizeJalaliDate(tarikh))) return;
+    try {
+      const seq = await suggestDocSequence('issue', tarikh);
+      setFormData((prev) => {
+        // The suggestion answers the date it was asked for. A reply that lands
+        // after the user moved on to another date would write a head that no
+        // longer matches the form, so it is dropped rather than applied.
+        if (prev.tarikh !== tarikh) return prev;
+        return {
+          ...prev,
+          issue_number: formatDocNumber(ISSUE_PREFIX, tarikh, seq),
+        };
+      });
+    } catch {
+      // Leave the field empty; the backend still validates whatever is typed.
+    }
+  }, []);
+
+  useEffect(() => {
+    suggestNumber(formData.tarikh);
+  }, [formData.tarikh, suggestNumber]);
+
+  /** The sequence is the only editable part; the head stays fixed to the date. */
+  const handleSequenceChange = (e) => {
+    setFormData((prev) => ({
+      ...prev,
+      issue_number: formatDocNumber(ISSUE_PREFIX, prev.tarikh, e.target.value),
+    }));
+  };
 
   const stockOf = (kodKala) => {
     const item = items.find(i => i.kod_kala === kodKala);
@@ -136,30 +193,76 @@ export default function Issues() {
     return totals;
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  /**
+   * Every reason the form is not yet submittable, derived from its own state.
+   * Each field is checked on its own merits, so one invalid field never wipes
+   * what the user already entered elsewhere — the values stay put and only the
+   * Submit button stays disabled.
+   *
+   * No line is dropped here. A line with an item but no quantity, a quantity but
+   * no item, or a precision the unit cannot express makes the *whole document*
+   * unsubmittable, and the problem is reported on its row — filtering the line
+   * out and submitting the rest used to discard what the user had typed without
+   * a word.
+   */
+  const formProblems = () => {
+    const problems = [];
 
-    if (!formData.issue_number || !formData.tarikh) {
-      setFormError('شماره حواله و تاریخ الزامی است');
-      return;
+    if (!formData.issue_number.trim()) {
+      problems.push('شماره حواله الزامی است');
+    } else if (!isValidDocNumber(formData.issue_number)) {
+      problems.push('شماره حواله باید به صورت H-YYMMDD-شماره ترتیبی باشد');
     }
 
-    const validLines = formData.lines.filter(l => l.kala_id && Number(l.maqdar) > 0);
-    if (validLines.length === 0) {
-      setFormError('حداقل یک ردیف معتبر وارد کنید');
-      return;
+    if (!formData.tarikh.trim()) {
+      problems.push('تاریخ الزامی است');
+    } else if (!isValidJalaliDate(normalizeJalaliDate(formData.tarikh))) {
+      problems.push('تاریخ باید شمسی و معتبر باشد (مثال: 1405/07/01)');
     }
 
-    // Client-side stock guard (server re-checks authoritatively)
+    // Every line the user entered, each on its own merits. Nothing is filtered
+    // out, so nothing is lost: the values stay in the rows and the problems name
+    // the rows.
+    const lineIssues = validateDocumentLines(formData.lines, items, precision);
+    for (const idx of Object.keys(lineIssues).map(Number).sort((a, b) => a - b)) {
+      for (const msg of lineIssues[idx]) {
+        problems.push(`ردیف ${idx + 1}: ${msg}`);
+      }
+    }
+
+    if (formData.lines.every(isBlankLine)) {
+      problems.push('حداقل یک ردیف با کالا و مقدار مثبت الزامی است');
+    }
+
+    // The document as a whole: the sum of every line of the same item must fit
+    // the stock. Per-line checks alone let two half-requests add up to more than
+    // the warehouse holds.
     const totals = requestedTotals();
     for (const [kodKala, qty] of Object.entries(totals)) {
       const stock = stockOf(kodKala);
       if (stock !== null && qty > stock) {
         const item = items.find(i => i.kod_kala === kodKala);
-        setFormError(`موجودی ناکافی برای ${item?.naam_kala || kodKala}: درخواست ${qty}، موجودی ${stock}`);
-        return;
+        problems.push(`موجودی ناکافی برای ${item?.naam_kala || kodKala}: درخواست ${qty}، موجودی ${stock}`);
       }
     }
+
+    return problems;
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    // Derived validity is already what gates the button; this is the last line
+    // of defence against a stale render and gives the user a precise reason.
+    const problems = formProblems();
+    if (problems.length) {
+      setFormError(problems[0]);
+      return;
+    }
+
+    // Only the untouched, empty rows are left out — every line the user entered
+    // passed validation, so nothing entered is being dropped here.
+    const linesToSend = formData.lines.filter((l) => !isBlankLine(l));
 
     try {
       setSubmitting(true);
@@ -174,9 +277,11 @@ export default function Issues() {
           tahvil_gir: formData.tahvil_gir.trim(),
           mahl_masraf: formData.mahl_masraf.trim(),
           tavazihat: formData.tavazihat.trim(),
-          lines: validLines.map(l => ({
+          lines: linesToSend.map(l => ({
             kala_id: l.kala_id,
             maqdar: Number(l.maqdar),
+            // The unit is the Item Master's; the form sends it for the record and
+            // the backend overrides it with the master value regardless.
             vahed: l.vahed || '',
             tavazihat: (l.tavazihat || '').trim()
           }))
@@ -194,6 +299,8 @@ export default function Issues() {
       fetchIssues();
       fetchItems(); // refresh stock shown in the page
     } catch (err) {
+      // The typed values are kept: a rejected issue is a fixable form, and
+      // clearing it would throw away every quantity the user entered.
       setFormError(err.message);
     } finally {
       setSubmitting(false);
@@ -209,6 +316,8 @@ export default function Issues() {
   }
 
   const totals = requestedTotals();
+  const problems = showForm ? formProblems() : [];
+  const canSubmit = problems.length === 0;
 
   return (
     <div className="issues-container">
@@ -354,14 +463,38 @@ export default function Issues() {
                 <div className="form-row">
                   <div className="form-group">
                     <label>شماره حواله *</label>
-                    <input
-                      type="text"
-                      name="issue_number"
-                      value={formData.issue_number}
-                      onChange={handleHeaderChange}
-                      required
-                      placeholder="مثال: H-050701-001"
-                    />
+                    <div className="doc-number-field" dir="ltr">
+                      {/* The prefix and the date head are fixed by the document's
+                          date, so they are context, not inputs: only the sequence
+                          is the user's to choose or change. */}
+                      <span
+                        className="doc-number-head"
+                        title="پیشوند و تاریخ داخل شماره از تاریخ سند ساخته می‌شوند و قابل تغییر نیستند"
+                      >
+                        {docNumberHead(ISSUE_PREFIX, formData.tarikh)}
+                      </span>
+                      <input
+                        type="text"
+                        name="issue_sequence"
+                        value={docNumberSequence(formData.issue_number)}
+                        onChange={handleSequenceChange}
+                        required
+                        placeholder="شماره ترتیبی"
+                        inputMode="numeric"
+                        dir="ltr"
+                        className="doc-number-seq"
+                      />
+                    </div>
+                    {formData.issue_number && !isValidDocNumber(formData.issue_number) && (
+                      <div className="field-hint field-hint-error">
+                        شماره باید به صورت H-YYMMDD-شماره ترتیبی باشد
+                      </div>
+                    )}
+                    {isValidDocNumber(formData.issue_number) && (
+                      <div className="field-hint">
+                        پیشنهاد سامانه برای تاریخ {formData.tarikh}
+                      </div>
+                    )}
                   </div>
 
                   <div className="form-group">
@@ -375,7 +508,17 @@ export default function Issues() {
                       placeholder="YYYY/MM/DD"
                       inputMode="numeric"
                       dir="ltr"
+                      className={
+                        formData.tarikh && !isValidJalaliDate(normalizeJalaliDate(formData.tarikh))
+                          ? 'input-error'
+                          : ''
+                      }
                     />
+                    {formData.tarikh && !isValidJalaliDate(normalizeJalaliDate(formData.tarikh)) && (
+                      <div className="field-hint field-hint-error">
+                        تاریخ شمسی معتبر نیست — ماه‌های ۱ تا ۶ سی‌ویک روزه هستند
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -426,6 +569,18 @@ export default function Issues() {
                     const stock = stockOf(line.kala_id);
                     const requested = totals[line.kala_id] || 0;
                     const overLimit = stock !== null && requested > stock;
+                    const item = items.find((i) => i.kod_kala === line.kala_id);
+                    const decimals = decimalsForUnit(precision, line.vahed);
+                    // What the warehouse would hold if this document were issued
+                    // as it stands — cumulative across every line of this item,
+                    // which is the number the user is actually deciding about.
+                    const remaining = stock === null ? null : stock - requested;
+                    // Every problem this row has on its own merits — an
+                    // incomplete row is reported on the row, never discarded.
+                    const rowProblems = isBlankLine(line)
+                      ? []
+                      : lineProblems(line, items, precision);
+                    const qtyBad = rowProblems.length > 0;
 
                     return (
                       <div key={idx} className="line-row">
@@ -470,16 +625,20 @@ export default function Issues() {
                             onChange={(e) => handleLineChange(idx, e)}
                             placeholder="مقدار"
                             min="0"
-                            step="0.01"
+                            step={stepForDecimals(decimals)}
                             required
-                            className={overLimit ? 'input-error' : ''}
+                            className={overLimit || qtyBad ? 'input-error' : ''}
+                            // A rejected submit must not blank a quantity the user
+                            // typed; the value is controlled state and is kept.
                           />
                           <input
                             type="text"
                             name="vahed"
                             value={line.vahed}
-                            onChange={(e) => handleLineChange(idx, e)}
+                            readOnly
                             placeholder="واحد"
+                            title="واحد از تعریف کالا گرفته می‌شود و قابل تغییر نیست"
+                            className="input-readonly"
                           />
                           <input
                             type="text"
@@ -500,9 +659,30 @@ export default function Issues() {
                         </button>
                         {line.kala_id && (
                           <div className={`line-stock ${overLimit ? 'stock-over' : ''}`}>
-                            {overLimit
-                              ? `بیش از موجودی (${requested}/${stock})`
-                              : `موجودی: ${Number(stock).toLocaleString('fa-IR')} ${line.vahed}`}
+                            {overLimit ? (
+                              <>
+                                بیش از موجودی ({requested}/{stock})
+                                {/* The entered quantity is repeated back so the
+                                  failure does not hide what was asked for. */}
+                                <span className="stock-detail">
+                                  موجودی پس از این حواله: {Number(remaining).toLocaleString('fa-IR')} {line.vahed}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                موجودی: {Number(stock).toLocaleString('fa-IR')} {line.vahed}
+                                <span className="stock-detail">
+                                  موجودی پس از این حواله: {Number(remaining).toLocaleString('fa-IR')} {line.vahed}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
+                        {qtyBad && (
+                          <div className="line-stock stock-over">
+                            {rowProblems.map((p, i) => (
+                              <div key={i}>• {p}</div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -512,10 +692,32 @@ export default function Issues() {
               </div>
 
               <div className="modal-footer">
-                <button type="button" className="btn-cancel" onClick={() => setShowForm(false)}>
+                {problems.length > 0 && (
+                  <div className="form-footer-problems">
+                    {problems.map((p, i) => (
+                      <div key={i}>• {p}</div>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => {
+                    // Cancel closes the form and keeps what was typed. Wiping the
+                    // fields here would lose a half-enterered document over a
+                    // distraction; the values are still here when the form reopens.
+                    setShowForm(false);
+                    setFormError(null);
+                  }}
+                >
                   انصراف
                 </button>
-                <button type="submit" className="btn-submit" disabled={submitting}>
+                <button
+                  type="submit"
+                  className="btn-submit"
+                  disabled={submitting || !canSubmit}
+                  title={canSubmit ? '' : problems[0]}
+                >
                   {submitting ? 'در حال ثبت...' : 'ثبت حواله'}
                 </button>
               </div>

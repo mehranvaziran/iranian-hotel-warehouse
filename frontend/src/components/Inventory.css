@@ -12,7 +12,9 @@
 .inventory-header h1 {
   font-size: 28px;
   font-weight: 600;
-  color: #1a1a1a;
+  /* The page header sits on the dark content area, not on the white table
+   * below it — the dark text colour used to make it invisible. */
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -37,19 +39,17 @@
   margin-bottom: 24px;
 }
 
+/* Sizing only — the fill, border and focus ring come from the single input rule
+ * in index.css, so the filters read as the same control every form uses. */
 .search-input {
   flex: 1;
   padding: 12px 16px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
 }
 
 .group-filter {
   padding: 12px 16px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
   min-width: 200px;
@@ -63,19 +63,22 @@
   margin-bottom: 24px;
 }
 
-.stat-card {
+/* Scoped to this page's stat grid: `.stat-card` is also the dashboard card's
+ * class, and an unscoped rule here would override that card's dark surface on
+ * the dashboard too, leaving its light text invisible until hover. */
+.inventory-stats .stat-card {
   background: white;
   padding: 20px;
   border-radius: 12px;
   border: 1px solid #e0e0e0;
 }
 
-.stat-card.warning {
+.inventory-stats .stat-card.warning {
   border-color: #f39c12;
   background: #fff8e1;
 }
 
-.stat-card.danger {
+.inventory-stats .stat-card.danger {
   border-color: #e74c3c;
   background: #ffebee;
 }

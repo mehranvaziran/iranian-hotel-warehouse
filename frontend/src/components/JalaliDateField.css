@@ -1,0 +1,26 @@
+/* An editable Jalali date: three parts side by side. The selects read their
+ * chrome from the single input rule in index.css, so a date field looks like
+ * every other field in the form. Sizing only lives here. */
+.jalali-date-field {
+  display: inline-flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+
+.jalali-date-part {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.jalali-date-label {
+  font-size: 11px;
+  color: #66788c;
+  padding-right: 2px;
+}
+
+.jalali-date-part select {
+  min-width: 96px;
+  padding: 8px 10px;
+}

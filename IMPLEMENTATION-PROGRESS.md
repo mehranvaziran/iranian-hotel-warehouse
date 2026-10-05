@@ -1,5 +1,6 @@
 # Implementation Progress Report
-**Date:** 2026-09-25 (updated; repair applied)
+**Date:** 2026-09-25 (updated; repair applied) — latest test status appended
+**2026-10-02**, see "Hardening" at the bottom
 **Session:** End-to-End Implementation (continuation from `482b499`)
 
 ## ✅ Completed This Session
@@ -89,3 +90,42 @@ Frontend production build also passes (56 modules, no errors).
 ## 📋 Remaining
 
 - Nothing blocking. Optional: `git push` (branch is 1 commit ahead of origin).
+
+---
+
+## ✅ Hardening — 2026-10-02
+
+Corrective fixes applied on branch `review/hardening-1405-07-08`:
+
+- **Document lines are never silently dropped.** Both forms validated a filtered
+  subset, so a half-entered row vanished from the submitted document. A line is
+  now either valid or the whole document is invalid, with every problem reported
+  on the row it belongs to.
+- **A document number's date must be the document's date.** The `{R|H}-{Jalali
+  YYMMDD}-{seq}` head is now derived from the date and shown read-only, with only
+  the sequence editable; the backend rejects a number whose embedded date is not
+  the document's own `tarikh`. Existing historical numbers are never rewritten.
+- **Item-code suggestion follows the numeric sequence**, not the text order —
+  `K9` no longer sorts above `K010`, so the suggested code cannot collide with a
+  code the catalog already has. The catalog's own width is preserved.
+
+### Test status — verified final counts
+
+- **Unit suite (`cd backend && npm run test:unit`): 80/80 passing**, up from the
+  58-case baseline. The new cases cover the item-code sequence
+  (`tests/item-code.test.js`) and the number/date-agreement and no-rewrite rules
+  (`tests/doc-number-and-precision.test.js`).
+- **API suite (`node tests/api-test.js`): 64/64 passing**, up from 57. The 7 new
+  assertions cover the incomplete-line refusal with proof nothing was written,
+  number/date mismatch refusal, malformed-number refusal, the suggestion
+  following the date it is asked for (including a non-padded date), and the two
+  item-code ordering cases.
+- **Front-end suite: 16/16 passing** (`node --import
+  ./tests/extensionless-resolution.js --test
+  ./tests/document-lines.test.js`). New — the front-end had no assertions
+  before; these pin the no-drop rule and the number head being fixed by the
+  date.
+- **Frontend production build passes** (59 modules, no errors).
+
+The live `data/warehouse.db` was not touched by any of this: every suite runs
+against a throwaway database it creates itself.

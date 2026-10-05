@@ -60,9 +60,13 @@
   - Current system statistics
 
 ### 4. Utility Scripts
-- ✅ Added `scripts/rebuild-warehouse-db.js` - Complete database rebuild from source
 - ✅ Added `scripts/create-real-db.js` - Database creation utility
 - ✅ Added `scripts/kill-old-server.js` - Process management utility
+
+  There is deliberately no rebuild script. Deleting the database destroys real
+  data, so `backend/src/db.js` seeds only when the catalog table is absent and
+  leaves a populated database exactly as it finds it; conversion of a legacy
+  database is the explicit, report-first `migrate-legacy-schema.js` tool.
 
 ### 5. Project Configuration
 - ✅ Updated `.gitignore` to properly exclude:
@@ -202,7 +206,6 @@ f5fd11e - Complete CRUD implementation for warehouse management system
 ```
 tests/api-test.js                      # Comprehensive test suite
 README.md                              # Complete documentation
-scripts/rebuild-warehouse-db.js        # Database rebuild utility
 scripts/create-real-db.js              # Database creation utility
 scripts/kill-old-server.js             # Process management
 warehouse-source.xlsx                  # Excel data source
@@ -247,8 +250,14 @@ node tests/api-test.js
 Expected: ✓ All tests passed! (15/15)
 
 ### Rebuild Database
+
+There is no rebuild script, deliberately. Removing the database destroys real
+data, so the seed is applied only when the catalog table is missing. To start
+from a fresh database, move the existing one aside first:
+
 ```bash
-node scripts/rebuild-warehouse-db.js
+mv data/warehouse.db data/warehouse.hand-moved.db
+cd backend && npm start   # creates data/warehouse.db and seeds it
 ```
 
 ---

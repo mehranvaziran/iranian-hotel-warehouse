@@ -12,7 +12,9 @@
 .receipts-header h1 {
   font-size: 28px;
   font-weight: 600;
-  color: #1a1a1a;
+  /* The page header sits on the dark content area, not on the white table
+   * below it — the dark text colour used to make it invisible. */
+  color: var(--text-primary);
   margin: 0;
 }
 
@@ -121,25 +123,54 @@
   margin-bottom: 8px;
 }
 
+/* Sizing only — the fill, border and focus ring come from the single input rule
+ * in index.css. */
 .form-group input,
 .form-group select {
   width: 100%;
   padding: 12px;
-  border: 1px solid #e0e0e0;
-  border-radius: 8px;
   font-size: 14px;
   font-family: inherit;
 }
 
-.form-group input:focus,
-.form-group select:focus {
-  outline: none;
-  border-color: #4a90e2;
+/* The document number is one value in two parts: a prefix and a Jalali date head
+ * that the document's date fixes, then the sequence which is the only part the
+ * user edits. The head is visibly not editable, like the locked unit field. */
+.doc-number-field {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  overflow: hidden;
 }
 
-.form-group input[readonly] {
-  background: #f8f9fa;
+.doc-number-field .doc-number-head {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: #f5f5f5;
   color: #666;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: not-allowed;
+  user-select: none;
+}
+
+.doc-number-field .doc-number-seq {
+  flex: 1;
+  min-width: 0;
+  padding: 12px;
+  border: none;
+  border-left: 1px solid #e0e0e0;
+  border-radius: 0;
+  font-size: 14px;
+  font-family: inherit;
+  background: #fff;
+}
+
+.doc-number-field .doc-number-seq:focus {
+  outline: none;
+  border-color: #4a90e2;
 }
 
 .form-row {
@@ -381,17 +412,9 @@
 .line-fields select,
 .line-fields input {
   padding: 9px 10px;
-  border: 1px solid #dcdcdc;
-  border-radius: 7px;
   font-size: 13px;
   font-family: inherit;
   min-width: 0;
-}
-
-.line-fields select:focus,
-.line-fields input:focus {
-  outline: none;
-  border-color: #4a90e2;
 }
 
 .btn-remove-line {
@@ -414,4 +437,43 @@
 .btn-remove-line:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* A read-only field is visibly not editable: the unit comes from the Item
+   Master and cannot be changed here. The rule in index.css handles the look;
+   this keeps the class the markup already used. */
+.line-fields input.input-readonly {
+  cursor: not-allowed;
+}
+
+.line-stock.stock-over {
+  margin-top: 4px;
+}
+
+.field-hint {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: #666;
+}
+
+.field-hint-error {
+  color: #c62828;
+}
+
+.form-footer-problems {
+  flex: 1;
+  margin-left: 8px;
+  font-size: 11.5px;
+  color: #c62828;
+  line-height: 1.5;
+  max-height: 66px;
+  overflow-y: auto;
+}
+
+.line-stock {
+  font-size: 12px;
+  color: #c62828;
+  background: #ffebee;
+  padding: 6px 12px;
+  border-radius: 12px;
 }

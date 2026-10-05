@@ -117,6 +117,46 @@ const baseCss = `
     text-align: center;
   }
   .empty { padding: 18px; text-align: center; color: #666; }
+  /* The preview toolbar: two actions that do two different things. "چاپ" goes
+   * straight to the paper print; "ذخیره به‌صورت PDF" opens the panel below,
+   * which says plainly how a browser produces a PDF. */
+  .toolbar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .tb-btn {
+    font-size: 11pt;
+    padding: 6px 16px;
+    cursor: pointer;
+    border: 1px solid #999;
+    background: #ffffff;
+    color: #1a1a1a;
+    border-radius: 6px;
+    font-family: inherit;
+  }
+  .tb-btn:hover { background: #f0f0f0; }
+  .toolbar-hint { margin-right: auto; font-size: 9pt; color: #777; }
+  /* The honest answer to "where does the PDF come from": the browser's print
+   * dialog with its PDF destination. Shown by the PDF button, hidden again on
+   * cancel or after the dialog has been opened. */
+  .pdf-panel {
+    display: none;
+    margin: -6px 0 14px;
+    padding: 12px 16px;
+    border: 1px dashed #999;
+    border-radius: 8px;
+    background: #fafafa;
+    color: #333;
+    font-size: 10pt;
+  }
+  .pdf-panel.open { display: block; }
+  .pdf-panel-head { font-weight: 700; margin-bottom: 6px; }
+  .pdf-panel-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 10px; }
+  .tb-pdf-go { background: #1a1a1a; color: #ffffff; border-color: #1a1a1a; }
+  .tb-pdf-go:hover { background: #333; }
   @media print {
     body { padding: 0; }
     .no-print { display: none !important; }
@@ -129,6 +169,19 @@ const baseCss = `
 
 /**
  * Page chrome shared by all printable documents.
+ *
+ * The page opens as a *preview*. Printing is never triggered automatically on
+ * load: throwing the native print dialog at the user the moment the page appears
+ * makes it impossible to read what is about to be printed, and on some browsers
+ * it steals focus from the window that opened it.
+ *
+ * The toolbar keeps "چاپ" and "ذخیره به‌صورت PDF" apart, because they are not the
+ * same action. The first calls `window.print()` for paper. The second does not
+ * pretend to write a PDF file: browsers do not give a page that ability, so it
+ * opens a panel that says so, and then offers the one real path — the same print
+ * dialog pointed at its PDF destination. Nothing here claims a standalone PDF
+ * was produced, because none was.
+ *
  * @param {Object} opts
  * @param {string} opts.title - Document title shown in the badge area.
  * @param {string} [opts.number] - Document number line.
@@ -145,9 +198,23 @@ function printLayout({ title, number, bodyHtml, signatures = '' }) {
   <style>${baseCss}</style>
 </head>
 <body>
-  <div class="no-print" style="display:flex; gap:8px; margin-bottom:14px;">
-    <button onclick="window.print()" style="font-size:11pt; padding:6px 16px; cursor:pointer;">🖨️ چاپ</button>
-    <button onclick="window.close()" style="font-size:11pt; padding:6px 16px; cursor:pointer;">بستن</button>
+  <div class="no-print toolbar">
+    <button type="button" id="btn-print" class="tb-btn" title="چاپ این سند روی کاغذ">🖨️ چاپ</button>
+    <button type="button" id="btn-pdf" class="tb-btn" title="ذخیره این سند به‌صورت فایل PDF">📄 ذخیره به‌صورت PDF</button>
+    <button type="button" id="btn-close" class="tb-btn" title="بستن پیش‌نمایش">بستن</button>
+    <span class="toolbar-hint">پیش‌نمایش — «چاپ» روی کاغذ چاپ می‌کند</span>
+  </div>
+  <div id="pdf-panel" class="no-print pdf-panel" role="note">
+    <div class="pdf-panel-head">📄 ذخیره به‌صورت PDF</div>
+    <p>
+      مرورگر اجازه نمی‌دهد این صفحه مستقیماً فایل PDF بسازد؛ فایل PDF از همان
+      پنجره چاپ و با انتخاب مقصد «ذخیره به‌صورت PDF» ساخته می‌شود. پس از باز
+      شدن پنجره، مقصد چاپ را روی <strong>ذخیره به‌صورت PDF</strong> تنظیم کنید.
+    </p>
+    <div class="pdf-panel-actions">
+      <button type="button" id="btn-pdf-cancel" class="tb-btn">انصراف</button>
+      <button type="button" id="btn-pdf-go" class="tb-btn tb-pdf-go">باز کردن پنجره ذخیره PDF</button>
+    </div>
   </div>
   <div class="doc">
     <div class="doc-header">
@@ -165,9 +232,58 @@ function printLayout({ title, number, bodyHtml, signatures = '' }) {
     <div class="doc-footer">${REPORT_FOOTER} – تاریخ چاپ: ${toPersian(todayJalali())}</div>
   </div>
   <script>
-    window.addEventListener('load', function () {
-      setTimeout(function () { try { window.print(); } catch (e) {} }, 350);
-    });
+    // Explicit user actions only. Nothing here runs on load.
+    (function () {
+      var printBtn = document.getElementById('btn-print');
+      var pdfBtn = document.getElementById('btn-pdf');
+      var pdfPanel = document.getElementById('pdf-panel');
+      var pdfGoBtn = document.getElementById('btn-pdf-go');
+      var pdfCancelBtn = document.getElementById('btn-pdf-cancel');
+      var closeBtn = document.getElementById('btn-close');
+
+      // Toggled with a class rather than the "hidden" attribute because the
+      // stylesheet's display rule would override the attribute.
+      function showPdfPanel(show) {
+        if (pdfPanel) pdfPanel.classList.toggle('open', show);
+      }
+
+      if (printBtn) {
+        // Paper: the dialog that opens is the printer's.
+        printBtn.addEventListener('click', function () {
+          try { window.print(); } catch (e) {}
+        });
+      }
+
+      if (pdfBtn) {
+        // A file. The page cannot write one — no browser exposes that — so the
+        // button says where the PDF actually comes from before it hands the user
+        // the dialog that writes it. Deliberately not the same click as "چاپ":
+        // the label promises a file, so the panel explains the real path instead
+        // of quietly opening the printer dialog.
+        pdfBtn.addEventListener('click', function () {
+          showPdfPanel(true);
+        });
+      }
+
+      if (pdfGoBtn) {
+        pdfGoBtn.addEventListener('click', function () {
+          showPdfPanel(false);
+          try { window.print(); } catch (e) {}
+        });
+      }
+
+      if (pdfCancelBtn) {
+        pdfCancelBtn.addEventListener('click', function () {
+          showPdfPanel(false);
+        });
+      }
+
+      if (closeBtn) {
+        closeBtn.addEventListener('click', function () {
+          try { window.close(); } catch (e) {}
+        });
+      }
+    })();
   </script>
 </body>
 </html>`;
@@ -370,6 +486,80 @@ export function inventoryHtml(inventory, meta = {}) {
 
   return printLayout({
     title: 'گزارش موجودی انبار',
+    bodyHtml: body,
+    signatures: reportSignatures,
+  });
+}
+
+/**
+ * Render a printable all-item movement report (گزارش ورود/خروج کالا).
+ *
+ * Shares the layout and the toolbar with the voucher prints, so every printable
+ * document in the system comes from one place.
+ *
+ * @param {Array} movements - Rows from `getMovementsReport`, each carrying
+ *   `kind`, `tarikh`, `doc_number`, `kala_id`, `naam_kala`, `qty`, `party`.
+ * @param {Object} meta - { from, to, item, reportDate }
+ */
+export function movementsHtml(movements, meta = {}) {
+  const rows = (movements || []).map((m, i) => {
+    const kindLabel =
+      m.kind === 'baseline' ? 'موجودی مبنا' :
+      m.kind === 'receipt' ? 'ورود' :
+      m.kind === 'issue' ? 'خروج' : m.kind;
+    const isIn = m.kind === 'baseline' || m.kind === 'receipt';
+    return `<tr>
+      <td>${toPersian(i + 1)}</td>
+      <td>${escapeHtml(kindLabel)}</td>
+      <td>${escapeHtml(m.tarikh || '-')}</td>
+      <td>${escapeHtml(m.doc_number || '-')}</td>
+      <td class="right">${escapeHtml(m.kala_id || '-')}</td>
+      <td class="right">${escapeHtml(m.naam_kala || '-')}</td>
+      <td>${isIn ? persianNumber(m.qty) : '-'}</td>
+      <td>${!isIn ? persianNumber(m.qty) : '-'}</td>
+      <td class="right">${escapeHtml(m.party || '')}</td>
+      <td class="right">${escapeHtml(m.tavazihat || '')}</td>
+    </tr>`;
+  }).join('');
+
+  const totalIn = (movements || [])
+    .filter((m) => m.kind === 'baseline' || m.kind === 'receipt')
+    .reduce((s, m) => s + Number(m.qty || 0), 0);
+  const totalOut = (movements || [])
+    .filter((m) => m.kind === 'issue')
+    .reduce((s, m) => s + Number(m.qty || 0), 0);
+
+  const itemLabel = meta.item
+    ? `${escapeHtml(meta.item.kod_kala)} – ${escapeHtml(meta.item.naam_kala || '')}`
+    : 'همه کالاها';
+
+  const body = `
+    <div class="meta">
+      <span class="meta-item"><span class="label">تاریخ گزارش:</span><span class="value">${escapeHtml(meta.reportDate || '-')}</span></span>
+      <span class="meta-item"><span class="label">کالا:</span><span class="value">${itemLabel}</span></span>
+      <span class="meta-item"><span class="label">از تاریخ:</span><span class="value">${escapeHtml(meta.from || 'ابتدا')}</span></span>
+      <span class="meta-item"><span class="label">تا تاریخ:</span><span class="value">${escapeHtml(meta.to || 'تاکنون')}</span></span>
+      <span class="meta-item"><span class="label">تعداد حرکت‌ها:</span><span class="value">${toPersian(movements?.length || 0)}</span></span>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width:34px">ردیف</th><th>نوع حرکت</th><th>تاریخ</th><th>شماره سند</th>
+          <th>کد کالا</th><th>نام کالا</th><th>ورود</th><th>خروج</th>
+          <th>طرف حساب / تحویل‌گیرنده</th><th>توضیحات</th>
+        </tr>
+      </thead>
+      <tbody>${rows || '<tr><td colspan="10" class="empty">حرکتی در این بازه ثبت نشده است</td></tr>'}</tbody>
+      <tfoot><tr>
+        <td colspan="6">جمع کل</td>
+        <td>${persianNumber(totalIn)}</td>
+        <td>${persianNumber(totalOut)}</td>
+        <td colspan="2"></td>
+      </tr></tfoot>
+    </table>`;
+
+  return printLayout({
+    title: 'گزارش ورود/خروج کالا',
     bodyHtml: body,
     signatures: reportSignatures,
   });

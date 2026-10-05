@@ -18,7 +18,7 @@ export default function App() {
       <div className="main-content">
         <Header />
         <div className="content-area">
-          {activePage === 'dashboard' && <Dashboard />}
+          {activePage === 'dashboard' && <Dashboard onNavigate={setActivePage} />}
           {activePage === 'items' && <Items />}
           {activePage === 'receipts' && <Receipts />}
           {activePage === 'issues' && <Issues />}

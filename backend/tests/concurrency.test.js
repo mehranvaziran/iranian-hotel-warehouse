@@ -200,7 +200,8 @@ test('the stock check sees writes committed by a concurrent writer', async () =>
     const b = new InventoryService(dbB);
 
     await a.createIssue({
-      issue_number: 'DUEL-SEQ-1',
+      // The document-number convention: `H-{Jalali YYMMDD}-{seq}`.
+      issue_number: 'H-050701-1',
       tarikh: '1405/07/01',
       lines: [{ kala_id: 'DUEL0', maqdar: STAKE, vahed: 'عدد' }],
     });
@@ -208,7 +209,7 @@ test('the stock check sees writes committed by a concurrent writer', async () =>
     await assert.rejects(
       () =>
         b.createIssue({
-          issue_number: 'DUEL-SEQ-2',
+          issue_number: 'H-050701-2',
           tarikh: '1405/07/01',
           lines: [{ kala_id: 'DUEL0', maqdar: STAKE, vahed: 'عدد' }],
         }),

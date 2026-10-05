@@ -1,12 +1,29 @@
 import React from 'react';
 import './ActivityPanel.css';
 
-export default function ActivityPanel({ title, rows, columns }) {
+/**
+ * A panel of recent documents with its "see everything" action.
+ *
+ * `onViewAll` navigates to the module this panel summarises. The button used to
+ * have no handler at all, which read as a control that did something while doing
+ * nothing. When no handler is supplied the button is not rendered rather than
+ * rendered dead.
+ */
+export default function ActivityPanel({ title, rows, columns, onViewAll, viewAllLabel = 'مشاهده همه ←' }) {
   return (
     <div className="activity-panel">
       <div className="panel-header">
         <h3 className="panel-title">{title}</h3>
-        <button className="view-all-btn">مشاهده همه →</button>
+        {onViewAll && (
+          <button
+            type="button"
+            className="view-all-btn"
+            onClick={onViewAll}
+            aria-label={`مشاهده همه ${title}`}
+          >
+            {viewAllLabel}
+          </button>
+        )}
       </div>
 
       {rows && rows.length > 0 ? (

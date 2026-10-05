@@ -9,10 +9,70 @@
 
 import { assertJalaliDate } from '../utils/jalali.js';
 import { reject } from '../utils/httpError.js';
+import {
+  RECEIPT_PREFIX,
+  ISSUE_PREFIX,
+  assertValidDocNumber,
+  assertDocNumberMatchesTarikh,
+} from '../utils/docNumber.js';
+
+/** Number of decimals allowed for a quantity written against a given unit. */
+const PRECISION_CACHE = new Map();
 
 export class InventoryService {
   constructor(db) {
     this.db = db;
+  }
+
+  /**
+   * How many decimal places a quantity in `unit` may carry, straight from the
+   * `unit_precision` table. This is business metadata held in the database, not
+   * a constant in React: a unit that starts needing decimals is a row there, and
+   * nothing else has to change.
+   *
+   * An unknown unit is whole-quantity — the same default every stored quantity
+   * in this system already satisfies. The value is cached per unit for the life
+   * of the service because it is read once per line of every document.
+   */
+  async #decimalsForUnit(unit) {
+    const key = unit ?? '';
+    if (PRECISION_CACHE.has(key)) return PRECISION_CACHE.get(key);
+
+    let decimals = 0;
+    if (key) {
+      const row = await this.db.get(
+        `SELECT decimals FROM unit_precision WHERE vahed = ?`,
+        [key]
+      );
+      decimals = row ? Number(row.decimals) : 0;
+    }
+    if (!Number.isInteger(decimals) || decimals < 0) decimals = 0;
+    if (decimals > 6) decimals = 6;
+
+    PRECISION_CACHE.set(key, decimals);
+    return decimals;
+  }
+
+  /**
+   * Read the whole precision table, so the front-end can derive its `step` from
+   * the same metadata the backend enforces instead of hard-coding a unit map.
+   */
+  async getUnitPrecision() {
+    const rows = await this.db.all(
+      `SELECT vahed, decimals FROM unit_precision ORDER BY vahed`
+    );
+    return rows.map((r) => ({ vahed: r.vahed, decimals: Number(r.decimals) }));
+  }
+
+  /**
+   * The canonical group list in display order: `sort_order`, then name.
+   */
+  async getGroups() {
+    return this.db.all(
+      `SELECT id, name, sort_order, is_active
+       FROM groups
+       ORDER BY sort_order, name`
+    );
   }
 
   /**
@@ -50,8 +110,44 @@ export class InventoryService {
    *
    * @returns {Promise<Array>} Array of inventory records
    */
+  /**
+   * The display order for the catalog: group first, then the *numeric* part of
+   * the item code. Sorting the code as text would put K2 next to K19 and ahead
+   * of K3, which is not how the codes are meant to read; the letters are a group
+   * prefix and the digits are a sequence number inside it.
+   *
+   * An item whose `goh` is not in the `groups` table (or whose group is retired)
+   * still appears, ordered after the known groups — reference data never removes
+   * an item from the listing.
+   *
+   * @returns {Promise<Array>} Array of inventory records
+   */
   async getAllInventory() {
-    const items = await this.db.all(`SELECT * FROM kala ORDER BY naam_kala`);
+    // `g.sort_order` supplies the group order; the numeric sequence inside the
+    // item code supplies the order within a group. SQLite here has no
+    // REGEXP_REPLACE, so the numeric part is pulled out in the sort below rather
+    // than in SQL.
+    const items = await this.db.all(`
+      SELECT k.*,
+             COALESCE(g.sort_order, 999999) AS group_order,
+             COALESCE(g.id, 999999)         AS group_id
+      FROM kala k
+      LEFT JOIN groups g ON g.name = k.goh
+    `);
+
+    items.sort((a, b) => {
+      if (a.group_order !== b.group_order) return a.group_order - b.group_order;
+      // Strip the group letters and anything after the digits, so "K019-ب" and a
+      // hypothetical "K019" compare by number first and by the rest second.
+      const num = (code) => {
+        const m = String(code ?? '').match(/(\d+)/);
+        return m ? Number(m[1]) : Number.MAX_SAFE_INTEGER;
+      };
+      const na = num(a.kod_kala);
+      const nb = num(b.kod_kala);
+      if (na !== nb) return na - nb;
+      return String(a.kod_kala).localeCompare(String(b.kod_kala), 'fa');
+    });
 
     const inventory = await Promise.all(
       items.map(async (item) => {
@@ -263,7 +359,7 @@ export class InventoryService {
       }
 
       const item = await this.db.get(
-        `SELECT kod_kala, vahed, is_active FROM kala WHERE kod_kala = ?`,
+        `SELECT kod_kala, naam_kala, vahed, is_active FROM kala WHERE kod_kala = ?`,
         [line.kala_id]
       );
 
@@ -274,6 +370,20 @@ export class InventoryService {
       if (item.is_active !== 1) {
         throw reject(
           `کالای «${line.kala_id}» غیرفعال است و نمی‌تواند در سند جدید وارد شود`
+        );
+      }
+
+      // The unit's own precision decides what a valid quantity looks like. A
+      // whole-count unit rejects 1.5 outright; a decimal unit rounds only within
+      // its allowed places, so 1.234 against a 2-decimal unit is rejected too —
+      // rounding it silently would record a quantity the user never entered.
+      const decimals = await this.#decimalsForUnit(item.vahed);
+      const scaled = qty * 10 ** decimals;
+      if (!Number.isInteger(scaled)) {
+        const unitLabel = item.vahed ? ` (${item.vahed})` : '';
+        throw reject(
+          `مقدار برای کالای «${item.naam_kala || line.kala_id}»${unitLabel} ` +
+            `نباید بیش از ${decimals} رقم اعشار داشته باشد`
         );
       }
 
@@ -300,6 +410,8 @@ export class InventoryService {
    */
   async createReceipt({ receipt_number, tarikh, tavazihat, lines }) {
     assertJalaliDate(tarikh, 'رسید');
+    assertValidDocNumber(receipt_number, RECEIPT_PREFIX);
+    assertDocNumberMatchesTarikh(receipt_number, RECEIPT_PREFIX, tarikh);
 
     await this.db.run('BEGIN IMMEDIATE TRANSACTION');
     try {
@@ -341,6 +453,8 @@ export class InventoryService {
    */
   async createIssue({ issue_number, tarikh, tahvil_gir, mahl_masraf, tavazihat, lines }) {
     assertJalaliDate(tarikh, 'حواله');
+    assertValidDocNumber(issue_number, ISSUE_PREFIX);
+    assertDocNumberMatchesTarikh(issue_number, ISSUE_PREFIX, tarikh);
 
     await this.db.run('BEGIN IMMEDIATE TRANSACTION');
     try {

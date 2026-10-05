@@ -103,3 +103,76 @@ export function normalizeJalaliDate(value) {
   if (!m) return String(value ?? '').trim();
   return `${m[1]}/${pad(Number(m[2]))}/${pad(Number(m[3]))}`;
 }
+
+/**
+ * Split a Jalali `YYYY/MM/DD` into its parts, or `null` when the string is not a
+ * date at all. The report range fields use this to feed their year/month/day
+ * controls without re-implementing the calendar, and a partial or empty value
+ * reports `null` instead of throwing — an incomplete date is displayed, never
+ * fatal.
+ */
+export function jalaliDateParts(value) {
+  const m = String(value ?? '').trim().match(JALALI_DATE_RE);
+  if (!m) return null;
+  return { jy: Number(m[1]), jm: Number(m[2]), jd: Number(m[3]) };
+}
+
+/**
+ * Rebuild the canonical `YYYY/MM/DD` from parts.
+ *
+ * The day is clamped to the month's length, because a day that was legal in one
+ * month is not legal in another: moving a range end from شهریور (30 days) to
+ * مرداد (31) is harmless, but the other way round a 31st day has nowhere to go,
+ * and landing on a day that cannot occur would hand the backend a date its own
+ * validation rejects. Rather than reset anything, the day steps back to the
+ * month's last legal day and the rest of the form keeps what it had.
+ */
+export function formatJalaliDateParts(jy, jm, jd) {
+  const year = Math.trunc(Number(jy));
+  const month = Math.min(Math.max(Math.trunc(Number(jm)) || 1, 1), 12);
+  const day = Math.min(Math.max(Math.trunc(Number(jd)) || 1, 1), jalaliMonthLength(year, month));
+  return `${year}/${pad(month)}/${pad(day)}`;
+}
+
+// A stored `tarikh` is Jalali and slash-separated. A dash-separated day, and
+// every `created_at` timestamp, is still Gregorian — both spellings appear in
+// the live data, and the calendar a value is in decides how it is displayed.
+const JALALI_STORED_RE = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/;
+const GREGORIAN_STORED_RE = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/;
+
+/**
+ * Render a stored date or timestamp as the system's canonical Jalali date.
+ *
+ * The business calendar is Jalali, but two kinds of value reach the UI in
+ * Gregorian: the `created_at` timestamps the activity feed is built from, and
+ * the historical QA rows whose `tarikh` was recorded as a Gregorian day. Both
+ * are *displayed* as Jalali here without rewriting the row — the stored value is
+ * kept exactly as it was recorded, and this is only how it is shown.
+ *
+ * A value that is neither spelling (an empty string, free-form text) is returned
+ * unchanged rather than being forced into a date it is not.
+ *
+ * @param {string} value - a Jalali `YYYY/MM/DD`, or a Gregorian day/timestamp
+ * @returns {string} a Jalali `YYYY/MM/DD`, with the time-of-day kept if given
+ */
+export function toJalaliDisplay(value) {
+  const s = String(value ?? '').trim();
+  if (!s) return '';
+
+  // A slash-separated date inside the Jalali year range is already the business
+  // calendar — this is the canonical `tarikh` form, zero-padded for display.
+  const j = JALALI_STORED_RE.exec(s);
+  if (j && Number(j[1]) >= 1300 && Number(j[1]) <= 1500) {
+    return `${j[1]}/${pad(Number(j[2]))}/${pad(Number(j[3]))}`;
+  }
+
+  // Anything else date-shaped is Gregorian: converted for display only.
+  const g = GREGORIAN_STORED_RE.exec(s);
+  if (g) {
+    const { jy, jm, jd } = gregorianToJalali(Number(g[1]), Number(g[2]), Number(g[3]));
+    const date = `${jy}/${pad(jm)}/${pad(jd)}`;
+    return g[4] ? `${date} ${g[4]}:${g[5]}` : date;
+  }
+
+  return s;
+}

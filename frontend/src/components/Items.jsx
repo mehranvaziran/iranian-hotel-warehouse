@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import './Items.css';
 
 export default function Items() {
@@ -27,6 +27,14 @@ export default function Items() {
     hadd_aqal_mojoodi: '',
     tavazihat: ''
   });
+  // The canonical group list, in its stored display order. Group order is data
+  // held in the database, not an alphabetic convention derived here.
+  const [groups, setGroups] = useState([]);
+  // What the catalog already uses for the prefix the user is typing. `null` is
+  // "nothing to suggest"; the panel is hidden then.
+  const [codeHint, setCodeHint] = useState(null);
+  const hintSeq = useRef(0);
+  const hintTimer = useRef(null);
 
   const fetchItems = async () => {
     try {
@@ -44,12 +52,30 @@ export default function Items() {
     }
   };
 
+  const fetchGroups = async () => {
+    try {
+      const res = await fetch('/api/groups');
+      if (!res.ok) throw new Error('خطا در دریافت گروه‌ها');
+      setGroups(await res.json());
+    } catch {
+      // The group filter falls back to the groups present on the loaded items.
+      setGroups((prev) => prev);
+    }
+  };
+
   useEffect(() => {
     fetchItems();
+    fetchGroups();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showInactive]);
 
-  const groups = ['all', ...new Set(items.map(item => item.goh).filter(Boolean))];
+  // The ordered list used by the filter. Falls back to the groups present on the
+  // loaded items when the canonical table could not be read, so the filter never
+  // empties because a reference request failed.
+  const groupOptions =
+    groups.length > 0
+      ? groups.map((g) => g.name)
+      : [...new Set(items.map((item) => item.goh).filter(Boolean))];
 
   const filteredItems = items.filter(item => {
     const matchesSearch =
@@ -62,31 +88,56 @@ export default function Items() {
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+    if (name === 'kod_kala') refreshCodeHint(value);
   };
 
-  const suggestCode = async (prefix) => {
-    if (!prefix || prefix.trim().length === 0) return;
-    try {
-      const res = await fetch(`/api/items/suggest-code/${encodeURIComponent(prefix.trim().toUpperCase())}`);
-      if (res.ok) {
-        const data = await res.json();
-        setFormData(prev => ({ ...prev, kod_kala: data.suggested_code }));
-      }
-    } catch (err) {
-      console.error('Error suggesting code:', err);
+  /**
+   * Look up what the catalog already uses for the prefix being typed, so the
+   * field can offer the next free code. The prefix is read by the API from the
+   * typed text — the shape of a code lives in one place, and this does not
+   * re-parse it in the browser.
+   *
+   * The reply is a *suggestion*. It never writes into the field: the user's code
+   * is kept until the suggestion button is clicked. This replaces the
+   * "پیشنهاد کد" button, which overwrote whatever the user had started typing,
+   * and the auto-fill on opening the form, which filled a code nobody had asked
+   * for. Debounced and sequenced, so a fast typist sees the answer to the
+   * keystrokes just typed and not an answer to earlier ones.
+   */
+  const refreshCodeHint = (typed) => {
+    if (hintTimer.current) clearTimeout(hintTimer.current);
+    const value = String(typed ?? '');
+    if (!value.trim()) {
+      setCodeHint(null);
+      return;
     }
+    const seq = ++hintSeq.current;
+    hintTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/items/suggest-code/${encodeURIComponent(value.trim())}`);
+        if (!res.ok) { setCodeHint(null); return; }
+        const data = await res.json();
+        if (seq !== hintSeq.current) return; // a later keystroke is already answered
+        // No letters in the typed text means no prefix to suggest from.
+        if (!data.prefix) { setCodeHint(null); return; }
+        setCodeHint({ prefix: data.prefix, last: data.last_code, suggested: data.suggested_code });
+      } catch {
+        // The hint is a convenience; a failed fetch hides it and the user types
+        // the code by hand exactly as before.
+        setCodeHint(null);
+      }
+    }, 220);
   };
 
   const openAddForm = async () => {
     setEditingItem(null);
     setFormError(null);
+    setCodeHint(null);
     setFormData({
       kod_kala: '', naam_kala: '', goh: '', zirgoh: '',
       vahed: '', hadd_aqal_mojoodi: '', tavazihat: ''
     });
     setShowForm(true);
-    // Default prefix is K (items are coded K###)
-    await suggestCode('K');
   };
 
   const openEditForm = (item) => {
@@ -292,7 +343,7 @@ export default function Items() {
           onChange={(e) => setSelectedGroup(e.target.value)}
         >
           <option value="all">همه گروه‌ها</option>
-          {groups.filter(g => g !== 'all').map(group => (
+          {groupOptions.map((group) => (
             <option key={group} value={group}>{group}</option>
           ))}
         </select>
@@ -359,23 +410,53 @@ export default function Items() {
                         : <span className="status-badge status-ok">موجود</span>}
                 </td>
                 <td>
-                  <div className="row-actions">
-                    <button className="btn-details" onClick={() => handleItemClick(item)}>
-                      جزئیات
+                  <div className="row-actions" role="group" aria-label="عملیات کالا">
+                    <button
+                      type="button"
+                      className="action-icon action-details"
+                      title="جزئیات کالا"
+                      aria-label="جزئیات کالا"
+                      onClick={() => handleItemClick(item)}
+                    >
+                      ℹ️
                     </button>
-                    <button className="btn-cardex" onClick={() => handleViewCardex(item)}>
-                      کارتکس
+                    <button
+                      type="button"
+                      className="action-icon action-cardex"
+                      title="کارتکس کالا"
+                      aria-label="کارتکس کالا"
+                      onClick={() => handleViewCardex(item)}
+                    >
+                      🗂️
                     </button>
                     {item.is_active === 0 && (
-                      <button className="btn-reactivate" onClick={() => handleReactivate(item)}>
-                        فعال‌سازی
+                      <button
+                        type="button"
+                        className="action-icon action-reactivate"
+                        title="فعال‌سازی مجدد کالا"
+                        aria-label="فعال‌سازی مجدد کالا"
+                        onClick={() => handleReactivate(item)}
+                      >
+                        ♻️
                       </button>
                     )}
-                    <button className="btn-edit" onClick={() => openEditForm(item)}>
-                      ویرایش
+                    <button
+                      type="button"
+                      className="action-icon action-edit"
+                      title="ویرایش کالا"
+                      aria-label="ویرایش کالا"
+                      onClick={() => openEditForm(item)}
+                    >
+                      ✏️
                     </button>
-                    <button className="btn-delete" onClick={() => handleDelete(item)}>
-                      حذف
+                    <button
+                      type="button"
+                      className="action-icon action-delete"
+                      title="حذف کالا — در صورت وجود سابقه حرکت، کالا غیرفعال می‌شود"
+                      aria-label="حذف کالا"
+                      onClick={() => handleDelete(item)}
+                    >
+                      🗑️
                     </button>
                   </div>
                 </td>
@@ -557,16 +638,32 @@ export default function Items() {
                       placeholder="مثال: K019"
                       disabled={!!editingItem}
                     />
-                    {!editingItem && (
-                      <button
-                        type="button"
-                        className="btn-suggest"
-                        onClick={() => suggestCode(formData.kod_kala || 'K')}
-                      >
-                        پیشنهاد کد
-                      </button>
-                    )}
                   </div>
+                  {!editingItem && codeHint && (codeHint.last || codeHint.suggested) && (
+                    <div className="code-hint" role="note">
+                      {codeHint.last ? (
+                        <span>
+                          آخرین کد ثبت‌شده با پیشوند «{codeHint.prefix}»:{' '}
+                          <strong dir="ltr">{codeHint.last}</strong>
+                        </span>
+                      ) : (
+                        <span>کالایی با پیشوند «{codeHint.prefix}» هنوز ثبت نشده است.</span>
+                      )}
+                      {codeHint.suggested && (
+                        <button
+                          type="button"
+                          className="btn-hint"
+                          title="این کد در فیلد بالا قرار می‌گیرد؛ می‌توانید پس از آن نیز آن را تغییر دهید"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, kod_kala: codeHint.suggested }));
+                            setCodeHint(null);
+                          }}
+                        >
+                          استفاده از کد {codeHint.suggested}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 <div className="form-group">
@@ -590,8 +687,17 @@ export default function Items() {
                       value={formData.goh}
                       onChange={handleInputChange}
                       placeholder="مثال: کناف"
+                      // Locked once the item exists. When creating, free text is
+                      // kept so a new group can be typed; the canonical list is
+                      // offered as suggestions, not as a closed set.
                       disabled={!!editingItem}
+                      list="group-options"
                     />
+                    <datalist id="group-options">
+                      {groupOptions.map((g) => (
+                        <option key={g} value={g} />
+                      ))}
+                    </datalist>
                   </div>
 
                   <div className="form-group">

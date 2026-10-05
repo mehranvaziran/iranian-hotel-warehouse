@@ -67,6 +67,21 @@ export function assertJalaliDate(value, field) {
   return value;
 }
 
+const NORMALIZE_RE = /^(\d{4})\/(\d{1,2})\/(\d{1,2})$/;
+
+/**
+ * Canonicalise a recognisable Jalali date into the zero-padded `YYYY/MM/DD`
+ * form. A user typing `1405/7/1` means a real day; this is what turns it into
+ * `1405/07/01` so the lexicographic range filters and the date embedded in a
+ * document number both line up. Returns the trimmed input unchanged when it is
+ * not in a recognisable shape — validity is still `isValidJalaliDate`'s call.
+ */
+export function normalizeJalaliDate(value) {
+  const m = String(value ?? '').trim().match(NORMALIZE_RE);
+  if (!m) return String(value ?? '').trim();
+  return `${m[1]}/${String(m[2]).padStart(2, '0')}/${String(m[3]).padStart(2, '0')}`;
+}
+
 const pad = (n) => String(n).padStart(2, '0');
 
 /**

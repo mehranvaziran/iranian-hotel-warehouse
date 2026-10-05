@@ -38,12 +38,123 @@ export async function initDatabase(explicitPath) {
   if (!tableCheck) {
     await loadInitialData(db);
   }
+  // Reference data (group ordering, unit precision) is derived from the
+  // catalog that is already there and only ever *added* — an existing row is
+  // never updated or deleted, so this is safe to run on every startup against
+  // a live database. Groups and units that already exist keep their order and
+  // their precision.
+  await ensureGroupOrder(db);
+  await ensureUnitPrecision(db);
   // An existing database is left exactly as it is. Startup never deletes
   // anything: the legacy `vorood`/`khorooj` schema conversion is a one-off that
   // belongs in the explicit `src/scripts/migrate-legacy-schema.js` tool, not on
   // the boot path of every server.
 
   return db;
+}
+
+/**
+ * Make sure a `groups` row exists for `name`.
+ *
+ * An item can be created in a group nobody has used before. Ordering is stored
+ * data, so that group needs a row with a sort_order, or it falls to the end of
+ * the list by default — which is the right place for a group that was just
+ * added. Existing rows are never touched: an INSERT OR IGNORE means a group that
+ * is already there keeps the order it has.
+ *
+ * Safe to run against a live database at any time; it only ever adds a row.
+ */
+export async function ensureGroup(db, name) {
+  const group = String(name ?? '').trim();
+  if (!group) return;
+  const row = await db.get('SELECT MAX(sort_order) AS max_order FROM groups');
+  const nextOrder = row && Number.isFinite(row.max_order) ? row.max_order + 10 : 10;
+  await db.run(
+    'INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)',
+    [group, nextOrder]
+  );
+}
+
+/**
+ * Populate `groups` from the distinct `goh` values the catalog already uses.
+ *
+ * The order is the order the groups first appear in the catalog (by smallest
+ * kala id), which is the order the seed data has always presented them in.
+ * Running this on a database whose groups table is already populated is a
+ * no-op: nothing is reordered, nothing is renamed, nothing is removed.
+ */
+export async function ensureGroupOrder(db) {
+  const existing = await db.get('SELECT COUNT(*) AS c FROM groups');
+  if (existing.c > 0) return;
+
+  const rows = await db.all(
+    `SELECT goh, MIN(id) AS first_id
+     FROM kala
+     WHERE goh IS NOT NULL AND TRIM(goh) <> ''
+     GROUP BY goh
+     ORDER BY first_id`
+  );
+
+  // 10 apart so a group inserted later can slot between two existing ones
+  // without renumbering anything.
+  let order = 10;
+  for (const row of rows) {
+    await db.run(
+      'INSERT OR IGNORE INTO groups (name, sort_order) VALUES (?, ?)',
+      [row.goh, order]
+    );
+    order += 10;
+  }
+}
+
+/**
+ * Make sure a `unit_precision` row exists for `unit`.
+ *
+ * An item can be created with a unit nobody has used before. Precision is
+ * business metadata, so the unit needs a row; the safe default for a unit
+ * nobody has configured is whole quantities (0 decimals), which is what every
+ * quantity already stored in this system is. A unit that needs decimals is
+ * configured by updating that row, not by changing code.
+ *
+ * Only ever adds a row — an existing unit keeps the precision it has.
+ */
+export async function ensureUnit(db, unit) {
+  const vahed = String(unit ?? '').trim();
+  if (!vahed) return;
+  await db.run(
+    'INSERT OR IGNORE INTO unit_precision (vahed, decimals) VALUES (?, 0)',
+    [vahed]
+  );
+}
+
+/**
+ * Populate `unit_precision` from the units the catalog already uses.
+ *
+ * Every quantity currently stored in this system is a whole number, so the
+ * derived default for an existing unit is 0 decimals — the stored values are
+ * never altered to match. The table is what makes the precision *configurable*:
+ * a unit that needs one or two decimals becomes a row here.
+ */
+export async function ensureUnitPrecision(db) {
+  const existing = await db.get('SELECT COUNT(*) AS c FROM unit_precision');
+  if (existing.c > 0) return;
+
+  // DISTINCT and an aggregate cannot share one query in SQLite, so the unit set
+  // is grouped in a subquery and only then ordered by first appearance.
+  const rows = await db.all(
+    `SELECT vahed, MIN(id) AS first_id
+     FROM kala
+     WHERE vahed IS NOT NULL AND TRIM(vahed) <> ''
+     GROUP BY vahed
+     ORDER BY first_id`
+  );
+
+  for (const row of rows) {
+    await db.run(
+      'INSERT OR IGNORE INTO unit_precision (vahed, decimals) VALUES (?, 0)',
+      [row.vahed]
+    );
+  }
 }
 
 /**
@@ -137,6 +248,27 @@ export async function createSchema(db) {
     CREATE INDEX IF NOT EXISTS idx_issue_lines_item ON issue_lines(kala_id);
     CREATE INDEX IF NOT EXISTS idx_receipts_date ON receipts(tarikh);
     CREATE INDEX IF NOT EXISTS idx_issues_date ON issues(tarikh);
+
+    -- Groups: the canonical, ordered list of item categories. 'goh' on kala
+    -- stays as-is (it is business data we never rewrite); this table is what
+    -- gives a group its display order, so ordering is stored data rather than
+    -- an alphabetically- or hard-coded convention.
+    CREATE TABLE IF NOT EXISTS groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT UNIQUE NOT NULL,
+      sort_order INTEGER NOT NULL,
+      is_active INTEGER DEFAULT 1,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Unit precision: how many decimal places a given unit of measure may carry.
+    -- This is business metadata, not a front-end constant — a new unit (say
+    -- "متر" needing two decimals) is a row here, not a code change in React.
+    CREATE TABLE IF NOT EXISTS unit_precision (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      vahed TEXT UNIQUE NOT NULL,
+      decimals INTEGER NOT NULL DEFAULT 0
+    );
   `);
 
   // Keep updated_at honest: the column existed but was never maintained, so it

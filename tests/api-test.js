@@ -26,6 +26,28 @@ const BACKEND_DIR = path.join(ROOT, 'backend');
 const TEST_PORT = '3999';
 const BASE_URL = `http://localhost:${TEST_PORT}/api`;
 
+/**
+ * Document numbers follow the convention `{R|H}-{Jalali YYMMDD}-{seq}`. Every
+ * document this suite posts uses one of these, so the suite exercises the real
+ * numbering rule instead of an arbitrary string the API would now reject.
+ *
+ * The head is built from the *document's own date*, because the number is
+ * self-describing: the API rejects a number whose embedded Jalali date disagrees
+ * with `tarikh`. The sequence is a process-wide counter (starting well above the
+ * seeded documents' own sequences) so no two generated numbers collide, and the
+ * date defaults to a day the suite uses for most of its documents.
+ */
+let docSeq = 900;
+function jalaliHead(tarikh) {
+  return String(tarikh).replace(/\D/g, '').slice(2, 8);
+}
+function nextReceiptNumber(tarikh = '1405/07/01') {
+  return `R-${jalaliHead(tarikh)}-${++docSeq}`;
+}
+function nextIssueNumber(tarikh = '1405/07/01') {
+  return `H-${jalaliHead(tarikh)}-${++docSeq}`;
+}
+
 // Color codes for output
 const colors = {
   reset: '\x1b[0m',
@@ -225,7 +247,7 @@ ${colors.reset}`);
     created.items.push(code);
 
     await postJSON('/receipts', {
-      receipt_number: `TEST-A-${Date.now()}`,
+      receipt_number: nextReceiptNumber(),
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 50, vahed: 'عدد' }],
     }).then((r) => created.receipts.push(r.data.id));
@@ -341,7 +363,7 @@ ${colors.reset}`);
 
   await test('Gregorian receipt date is rejected', async () => {
     const { ok, status, data } = await postJSON('/receipts', {
-      receipt_number: `TEST-G-${Date.now()}`,
+      receipt_number: nextReceiptNumber(),
       tarikh: '2026-09-30',
       lines: [{ kala_id: 'T001', maqdar: 1, vahed: 'عدد' }],
     });
@@ -352,7 +374,7 @@ ${colors.reset}`);
 
   await test('Gregorian issue date is rejected', async () => {
     const { ok, status } = await postJSON('/issues', {
-      issue_number: `TEST-GI-${Date.now()}`,
+      issue_number: nextIssueNumber(),
       tarikh: '2026-09-30',
       lines: [{ kala_id: 'T001', maqdar: 1, vahed: 'عدد' }],
     });
@@ -363,7 +385,7 @@ ${colors.reset}`);
   await test('Jalali receipt date in canonical form is accepted', async () => {
     const before = await getItem('T001');
     const { ok, data } = await postJSON('/receipts', {
-      receipt_number: `TEST-J-${Date.now()}`,
+      receipt_number: nextReceiptNumber('1405/07/01'),
       tarikh: '1405/07/01',
       lines: [{ kala_id: 'T001', maqdar: 4, vahed: 'عدد' }],
     });
@@ -483,7 +505,7 @@ ${colors.reset}`);
   await test('Create multi-line receipt (POST /receipts)', async () => {
     const before = await getItem(testCode);
     const { ok, data: receipt } = await postJSON('/receipts', {
-      receipt_number: `TEST-R-${Date.now()}`,
+      receipt_number: nextReceiptNumber(),
       tarikh: '1405/07/01',
       tavazihat: 'رسید آزمایشی',
       lines: [
@@ -513,9 +535,12 @@ ${colors.reset}`);
   });
 
   await test('Duplicate receipt number is rejected with 400, not 500', async () => {
+    // The seeded receipt R-050617-173 is dated 1405/06/17; the number's head has to
+    // agree with that date, or the date rule would refuse it before the duplicate
+    // rule gets to speak.
     const { ok, status, data } = await postJSON('/receipts', {
       receipt_number: 'R-050617-173',
-      tarikh: '1405/07/01',
+      tarikh: '1405/06/17',
       lines: [{ kala_id: testCode, maqdar: 1, vahed: 'عدد' }],
     });
     assertFalse(ok, 'Duplicate receipt number must be rejected');
@@ -529,7 +554,7 @@ ${colors.reset}`);
   await test('Create multi-line issue (POST /issues)', async () => {
     const before = await getItem(testCode);
     const { ok, data: issue } = await postJSON('/issues', {
-      issue_number: `TEST-I-${Date.now()}`,
+      issue_number: nextIssueNumber('1405/07/02'),
       tarikh: '1405/07/02',
       tahvil_gir: 'تیم تست',
       mahl_masraf: 'واحد آزمایش',
@@ -554,9 +579,11 @@ ${colors.reset}`);
   });
 
   await test('Duplicate issue number is rejected with 400, not 500', async () => {
+    // The seeded issue H-050617-1 is dated 1405/06/17, so the head and the date
+    // must agree for the duplicate rule to be the one that refuses it.
     const { ok, status } = await postJSON('/issues', {
       issue_number: 'H-050617-1',
-      tarikh: '1405/07/01',
+      tarikh: '1405/06/17',
       lines: [{ kala_id: testCode, maqdar: 1, vahed: 'عدد' }],
     });
     assertFalse(ok, 'Duplicate issue number must be rejected');
@@ -573,7 +600,7 @@ ${colors.reset}`);
     const line2 = 2;         // fits on its own; together they are stock + 1
 
     const { ok, status, data } = await postJSON('/issues', {
-      issue_number: `TEST-OV-${Date.now()}`,
+      issue_number: nextIssueNumber('1405/07/03'),
       tarikh: '1405/07/03',
       lines: [
         { kala_id: testCode, maqdar: line1, vahed: 'عدد' },
@@ -591,7 +618,7 @@ ${colors.reset}`);
   await test('Issue is rejected when stock is insufficient', async () => {
     const before = await getItem(testCode);
     const { ok, status } = await postJSON('/issues', {
-      issue_number: `TEST-FAIL-${Date.now()}`,
+      issue_number: nextIssueNumber('1405/07/03'),
       tarikh: '1405/07/03',
       tahvil_gir: 'تیم تست',
       lines: [{ kala_id: testCode, maqdar: Number(before.current_stock) + 1000, vahed: 'عدد' }],
@@ -617,7 +644,7 @@ ${colors.reset}`);
     const ask = Number(before.current_stock) + 1000;
 
     const { ok, status, data } = await postJSON('/issues', {
-      issue_number: `TEST-C1-${Date.now()}`,
+      issue_number: nextIssueNumber('1405/07/04'),
       tarikh: '1405/07/04',
       lines: [{ kala_id: testCode, maqdar: ask, vahed: 'عدد' }],
     });
@@ -644,7 +671,7 @@ ${colors.reset}`);
   });
 
   await test('Issue validation - empty lines', async () => {
-    const { ok, status } = await postJSON('/issues', { issue_number: 'TEST-EMPTY', tarikh: '1405/07/01', lines: [] });
+    const { ok, status } = await postJSON('/issues', { issue_number: nextIssueNumber(), tarikh: '1405/07/01', lines: [] });
     assertFalse(ok, 'Should have failed validation');
     assertEquals(status, 400, 'Should return validation error');
   });
@@ -719,7 +746,7 @@ ${colors.reset}`);
     created.items.push(code);
 
     const receipt = await postJSON('/receipts', {
-      receipt_number: `TEST-H-${Date.now()}`,
+      receipt_number: nextReceiptNumber(),
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 3, vahed: 'عدد' }],
     });
@@ -754,7 +781,7 @@ ${colors.reset}`);
     created.items.push(code);
 
     const receipt = await postJSON('/receipts', {
-      receipt_number: `TEST-U-${Date.now()}`,
+      receipt_number: nextReceiptNumber(),
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 10, vahed: 'واحد تقلبی' }],
     });
@@ -769,7 +796,7 @@ ${colors.reset}`);
     );
 
     const issue = await postJSON('/issues', {
-      issue_number: `TEST-U2-${Date.now()}`,
+      issue_number: nextIssueNumber(),
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 4, vahed: 'واحد تقلبی' }],
     });
@@ -858,7 +885,7 @@ ${colors.reset}`);
     created.items.push(code);
 
     const receipt = await postJSON('/receipts', {
-      receipt_number: `TEST-Ret-${Date.now()}`,
+      receipt_number: nextReceiptNumber(),
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 20, vahed: 'عدد' }],
     });
@@ -870,7 +897,7 @@ ${colors.reset}`);
     assertEquals(retired.is_active, 0, 'The item should now be retired');
 
     const blockedReceipt = await postJSON('/receipts', {
-      receipt_number: `TEST-Ret2-${Date.now()}`,
+      receipt_number: nextReceiptNumber(),
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 5, vahed: 'عدد' }],
     });
@@ -882,7 +909,7 @@ ${colors.reset}`);
     );
 
     const blockedIssue = await postJSON('/issues', {
-      issue_number: `TEST-Ret3-${Date.now()}`,
+      issue_number: nextIssueNumber(),
       tarikh: '1405/07/01',
       lines: [{ kala_id: code, maqdar: 5, vahed: 'عدد' }],
     });
@@ -922,24 +949,30 @@ ${colors.reset}`);
       ['1405/7/1', false, 'The canonical form is zero-padded'],
     ];
 
+    // The document number carries the *same* date as the case under test, so a
+    // refusal can only be about the date itself: the number's head is built from
+    // each case's tarikh, and the sequence counter keeps every number distinct.
+    const mineNumbers = [];
     for (const [tarikh, shouldAccept, why] of cases) {
+      const number = nextReceiptNumber(tarikh);
       const res = await postJSON('/receipts', {
-        receipt_number: `TEST-D-${tarikh.replace(/\//g, '-')}-${Date.now()}`,
+        receipt_number: number,
         tarikh,
         lines: [{ kala_id: code, maqdar: 1, vahed: 'عدد' }],
       });
       if (shouldAccept) {
         assertTrue(res.ok, `${why} — expected acceptance, got: ${JSON.stringify(res.data)}`);
         created.receipts.push(res.data.id);
+        mineNumbers.push(number);
       } else {
         assertFalse(res.ok, `${why} — expected rejection, got: ${JSON.stringify(res.data)}`);
         assertEquals(res.status, 400, `${why} — refusal must be a client error`);
       }
     }
 
-    // Every accepted document must actually have been stored with its date.
+    // Every accepted document must actually have been stored.
     const receipts = await fetchJSON('/receipts');
-    const mine = receipts.filter((r) => r.receipt_number.startsWith('TEST-D-'));
+    const mine = receipts.filter((r) => mineNumbers.includes(r.receipt_number));
     assertEquals(mine.length, 5, 'Exactly the five valid dates must have been stored');
   });
 
@@ -1014,8 +1047,265 @@ ${colors.reset}`);
     const inventoryRes = await request('/print/inventory');
     assertTrue(String(inventoryRes.text).includes('گزارش موجودی'), 'Inventory print should have a title');
 
+    const movementsRes = await request('/print/movements');
+    assertTrue(movementsRes.status === 200, 'Movements print should return 200');
+    assertTrue(String(movementsRes.text).includes('ورود/خروج'), 'Movements print should have its title');
+
+    // Every kind of printable document shares one layout, so the preview rule is
+    // checked against each of them rather than assumed to carry over.
+    const pages = [
+      ['cardex', cardexRes],
+      ['inventory', inventoryRes],
+      ['movements', movementsRes],
+    ];
+    const receipts = await fetchJSON('/receipts');
+    if (receipts.length) {
+      const res = await request(`/print/receipt/${receipts[0].id}`);
+      assertEquals(res.status, 200, 'Receipt print should return 200');
+      pages.push(['receipt', res]);
+    }
+    const issues = await fetchJSON('/issues');
+    if (issues.length) {
+      const res = await request(`/print/issue/${issues[0].id}`);
+      assertEquals(res.status, 200, 'Issue print should return 200');
+      pages.push(['issue', res]);
+    }
+
+    for (const [kind, { text }] of pages) {
+      assertTrue(
+        !/setTimeout\([^)]*window\.print/.test(String(text)),
+        `A ${kind} print page must not call window.print() on load`
+      );
+      assertTrue(String(text).includes('btn-print'), `A ${kind} print page must offer an explicit print action`);
+      assertTrue(String(text).includes('btn-pdf'), `A ${kind} print page must offer an explicit PDF action`);
+      assertTrue(String(text).includes('btn-close'), `A ${kind} print page must offer a close action`);
+    }
+
     const missingRes = await request('/print/receipt/999999');
     assertEquals(missingRes.status, 404, 'Missing receipt print should 404');
+  });
+
+  await test('Print rejects a Gregorian date bound', async () => {
+    const res = await request('/print/movements?from=2026-09-30');
+    assertEquals(res.status, 400, 'A Gregorian range bound must be refused');
+  });
+
+  // ------------------------------------------------------------------
+  // Document-number suggestion
+  // ------------------------------------------------------------------
+
+  await test('Document number suggestion follows the convention', async () => {
+    const res = await fetchJSON('/doc-numbers/suggest/receipt?tarikh=1405/08/01');
+    assertTrue(res.full_number.startsWith('R-050801-'), `Head must be the Jalali date, got ${res.full_number}`);
+    assertTrue(/^\d+$/.test(res.sequence), 'The sequence must be a plain integer');
+
+    const issueRes = await fetchJSON('/doc-numbers/suggest/issue?tarikh=1405/08/01');
+    assertTrue(issueRes.full_number.startsWith('H-050801-'), `Issue head must use H, got ${issueRes.full_number}`);
+  });
+
+  await test('Document number suggestion defaults to today and rejects a bad date', async () => {
+    const res = await fetchJSON('/doc-numbers/suggest/receipt');
+    assertTrue(res.full_number.startsWith('R-'), 'A missing date must fall back to today, not fail');
+    assertTrue(res.tarikh.length === 10, 'The date used must be reported');
+
+    const bad = await request('/doc-numbers/suggest/receipt?tarikh=2026-09-30');
+    assertEquals(bad.status, 400, 'A Gregorian date must be refused');
+  });
+
+  await test('Suggestion continues an existing sequence for that date', async () => {
+    // K001 starts with no baseline, so stock it first: the point of the test is
+    // the number, not the stock move.
+    const stocking = await postJSON('/receipts', {
+      receipt_number: nextReceiptNumber('1405/08/01'),
+      tarikh: '1405/08/01',
+      lines: [{ kala_id: 'K001', maqdar: 5, vahed: 'شاخه' }],
+    });
+    assertTrue(stocking.ok, `Stocking receipt should succeed, got ${JSON.stringify(stocking.data)}`);
+    created.receipts.push(stocking.data.id);
+
+    const first = await fetchJSON('/doc-numbers/suggest/issue?tarikh=1405/08/01');
+    const { ok, data } = await postJSON('/issues', {
+      issue_number: first.full_number,
+      tarikh: '1405/08/01',
+      tahvil_gir: 'تست پیشنهاد',
+      lines: [{ kala_id: 'K001', maqdar: 1, vahed: 'شاخه' }],
+    });
+    assertTrue(ok, `Issue creation should succeed, got ${JSON.stringify(data)}`);
+    created.issues.push(data.id);
+
+    const second = await fetchJSON('/doc-numbers/suggest/issue?tarikh=1405/08/01');
+    assertTrue(
+      Number(second.sequence) > Number(first.sequence),
+      `The next suggestion must continue past the one just used (${first.sequence} -> ${second.sequence})`
+    );
+  });
+
+  await test('Suggestion continues the sequence across a different date', async () => {
+    // The sequence is per kind and continuous over the whole table: a new date
+    // chooses the head only and never restarts the count. Asking for 1405/09/02
+    // after numbers recorded on 1405/08/01 must not fall back to 1.
+    const before = await fetchJSON('/doc-numbers/suggest/receipt?tarikh=1405/08/01');
+    const later = await fetchJSON('/doc-numbers/suggest/receipt?tarikh=1405/09/02');
+    assertEquals(
+      Number(later.sequence),
+      Number(before.sequence),
+      `A new date must not restart the receipt sequence (${before.sequence} -> ${later.sequence})`
+    );
+    assertTrue(
+      later.full_number.startsWith('R-050902-'),
+      `The head must follow the date asked for, got ${later.full_number}`
+    );
+
+    // And the two kinds still count independently.
+    const issue = await fetchJSON('/doc-numbers/suggest/issue?tarikh=1405/09/02');
+    assertTrue(issue.full_number.startsWith('H-050902-'), `Issue head, got ${issue.full_number}`);
+  });
+
+  // ------------------------------------------------------------------
+  // Canonical groups and unit precision
+  // ------------------------------------------------------------------
+
+  await test('Groups endpoint returns the canonical ordered list', async () => {
+    const groups = await fetchJSON('/groups');
+    assertTrue(Array.isArray(groups), 'Groups should be an array');
+    assertTrue(groups.length > 0, 'The seeded groups should be present');
+    for (const g of groups) {
+      assertTrue('sort_order' in g, `Group ${g.name} must carry a sort_order`);
+      assertTrue('is_active' in g, `Group ${g.name} must carry an active state`);
+    }
+    const orders = groups.map((g) => g.sort_order);
+    const sorted = [...orders].sort((a, b) => a - b);
+    assertEquals(orders.join(','), sorted.join(','), 'Groups must arrive in sort_order');
+  });
+
+  await test('Unit precision endpoint lists every unit in the catalog', async () => {
+    const [precision, inventory] = await Promise.all([
+      fetchJSON('/unit-precision'),
+      fetchJSON('/inventory'),
+    ]);
+    const units = new Set(inventory.map((i) => i.vahed).filter(Boolean));
+    for (const u of units) {
+      const row = precision.find((p) => p.vahed === u);
+      assertTrue(row, `Unit "${u}" must have a precision row`);
+      assertTrue(Number.isInteger(Number(row.decimals)), `Precision for "${u}" must be an integer`);
+    }
+  });
+
+  await test('Creating an item in a new group registers the group', async () => {
+    const code = `G${Date.now().toString().slice(-6)}`;
+    const groupName = `گروه جدید ${Date.now() % 1000}`;
+    const { ok } = await postJSON('/items', {
+      kod_kala: code,
+      naam_kala: 'کالای گروه جدید',
+      goh: groupName,
+      vahed: 'عدد',
+    });
+    assertTrue(ok, 'Item creation should succeed');
+    created.items.push(code);
+
+    const groups = await fetchJSON('/groups');
+    assertTrue(groups.some((g) => g.name === groupName), 'The new group must now appear in the canonical list');
+  });
+
+  // ------------------------------------------------------------------
+  // Hardening: a document is never partially saved; the number's date is the
+  // document's date; the next code follows the numeric sequence
+  // ------------------------------------------------------------------
+
+  await test('A document with one valid and one incomplete line is rejected whole', async () => {
+    // The line-level rules apply to the document, not to a filtered subset: a
+    // second line that was selected but never given a quantity must not be
+    // silently dropped while the first line is saved.
+    const before = await getItem('K001');
+    const receiptsBefore = await fetchJSON('/receipts');
+
+    const { ok, status, data } = await postJSON('/receipts', {
+      receipt_number: nextReceiptNumber('1405/07/01'),
+      tarikh: '1405/07/01',
+      lines: [
+        { kala_id: 'K001', maqdar: 5, vahed: 'شاخه' },
+        { kala_id: 'K002', maqdar: '', vahed: 'شاخه' },
+      ],
+    });
+    assertFalse(ok, 'A document with an incomplete line must be refused');
+    assertEquals(status, 400, 'Refusal must be a client error');
+    assertTrue(
+      String(data.error).includes('مقدار'),
+      `The refusal should say what is wrong with the line, got: ${data.error}`
+    );
+
+    // And nothing may have been written: no new receipt, no stock move.
+    const receiptsAfter = await fetchJSON('/receipts');
+    assertEquals(receiptsAfter.length, receiptsBefore.length, 'No partial document may be saved');
+    const after = await getItem('K001');
+    assertApproxEquals(Number(after.current_stock), Number(before.current_stock), 'Stock must be unchanged');
+  });
+
+  await test('A document number whose embedded date is not the document date is rejected', async () => {
+    // `R-050618-1` is a well-formed number for 1405/06/18; posting it against
+    // 1405/07/01 must be refused, because the number is self-describing about
+    // which day the document belongs to.
+    const { ok, status, data } = await postJSON('/receipts', {
+      receipt_number: 'R-050618-1',
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: 'K001', maqdar: 1, vahed: 'شاخه' }],
+    });
+    assertFalse(ok, 'A number that disagrees with its date must be refused');
+    assertEquals(status, 400, 'Refusal must be a client error');
+    assertTrue(
+      String(data.error).includes('یکی باشد'),
+      `The refusal should name the disagreement between the two dates, got: ${data.error}`
+    );
+  });
+
+  await test('A malformed document number is rejected', async () => {
+    const { ok, status } = await postJSON('/receipts', {
+      receipt_number: 'NOT-A-NUMBER',
+      tarikh: '1405/07/01',
+      lines: [{ kala_id: 'K001', maqdar: 1, vahed: 'شاخه' }],
+    });
+    assertFalse(ok, 'A malformed number must be refused');
+    assertEquals(status, 400, 'Refusal must be a client error');
+  });
+
+  await test('Document number suggestion follows the date it is asked for', async () => {
+    // Changing the date changes the head, which is what keeps a suggested number
+    // from ever disagreeing with the document's own date.
+    const aug = await fetchJSON('/doc-numbers/suggest/receipt?tarikh=1405/08/01');
+    assertTrue(aug.full_number.startsWith('R-050801-'), `August head, got ${aug.full_number}`);
+    const sep = await fetchJSON('/doc-numbers/suggest/issue?tarikh=1405/09/02');
+    assertTrue(sep.full_number.startsWith('H-050902-'), `September head, got ${sep.full_number}`);
+  });
+
+  await test('A suggestion for a non-padded date still yields a whole number', async () => {
+    // `1405/9/2` is a real day the user might type. It must be canonicalised, not
+    // refused, or the field would be left empty when a head is derivable.
+    const res = await fetchJSON('/doc-numbers/suggest/receipt?tarikh=1405/9/2');
+    assertEquals(res.tarikh, '1405/09/02', 'The date used must be reported in canonical form');
+    assertTrue(
+      res.full_number.startsWith('R-050902-'),
+      `The head must be padded out of a single-digit month and day, got ${res.full_number}`
+    );
+  });
+
+  await test('Item code suggestion follows the numeric sequence, not the text order', async () => {
+    // W9 is textually higher than W010 while numerically lower. Following the text
+    // order suggested W010, a code the catalog already has; the numeric maximum is
+    // 10, so the suggestion must be W011.
+    await postJSON('/items', { kod_kala: 'W9', naam_kala: 'کالای آزمون ترتیب عددی', vahed: 'عدد' });
+    created.items.push('W9');
+    await postJSON('/items', { kod_kala: 'W010', naam_kala: 'کالای آزمون ترتیب عددی', vahed: 'عدد' });
+    created.items.push('W010');
+
+    const data = await fetchJSON('/items/suggest-code/W');
+    assertEquals(data.suggested_code, 'W011', 'The next code must follow the numeric suffix');
+  });
+
+  await test('Item code suggestion continues the catalog width', async () => {
+    // The seeded کناف catalog runs K001..K018, so the next code is K019 — the
+    // numeric maximum plus one, at the width the catalog already uses.
+    const data = await fetchJSON('/items/suggest-code/K');
+    assertEquals(data.suggested_code, 'K019', 'The suggestion must continue the seeded sequence');
   });
 
   // ------------------------------------------------------------------

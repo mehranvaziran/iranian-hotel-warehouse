@@ -1,4 +1,5 @@
 import React from 'react';
+import { toJalaliDisplay } from '../utils/jalali';
 import './RecentActivity.css';
 
 export default function RecentActivity({ activity }) {
@@ -17,7 +18,7 @@ export default function RecentActivity({ activity }) {
               </div>
               <div className="timeline-content">
                 <p className="timeline-description">{item.description}</p>
-                <p className="timeline-time">{item.timestamp}</p>
+                <p className="timeline-time">{toJalaliDisplay(item.timestamp)}</p>
               </div>
             </div>
           ))}

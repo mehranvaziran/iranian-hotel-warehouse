@@ -1,10 +1,17 @@
 import express from 'express';
 import cors from 'cors';
-import { initDatabase } from './db.js';
+import { initDatabase, ensureGroup, ensureUnit } from './db.js';
 import { InventoryService } from './services/inventoryService.js';
-import { receiptHtml, issueHtml, cardexHtml, inventoryHtml } from './printTemplates.js';
-import { todayJalali } from './utils/jalali.js';
+import { receiptHtml, issueHtml, cardexHtml, inventoryHtml, movementsHtml } from './printTemplates.js';
+import { todayJalali, isValidJalaliDate, normalizeJalaliDate } from './utils/jalali.js';
 import { reject } from './utils/httpError.js';
+import { suggestNextItemCode, lastItemCode, itemCodePrefix } from './utils/itemCode.js';
+import {
+  RECEIPT_PREFIX,
+  ISSUE_PREFIX,
+  suggestDocNumber,
+  formatDocNumber,
+} from './utils/docNumber.js';
 
 const app = express();
 // Overridable so the test suite can run the API on its own port.
@@ -399,41 +406,91 @@ app.delete('/api/issues/:id', requireDB, async (req, res) => {
   }
 });
 
-// Suggest next item code
-app.get('/api/items/suggest-code/:prefix', requireDB, async (req, res) => {
+// Suggest the next item code for whatever the user has typed so far.
+//
+// The prefix is derived from the typed text here — the shape of a code is parsed
+// in one place, and the browser does not re-implement it. The reply carries both
+// the last code the catalog has for the prefix and the next free one, and the
+// form shows them as a suggestion the user may accept or ignore; the code stays
+// the user's choice, and the duplicate check on POST /items still has the final
+// word.
+app.get('/api/items/suggest-code/:text', requireDB, async (req, res) => {
   try {
-    const prefix = req.params.prefix.toUpperCase();
-
-    const lastItem = await db.get(
-      `SELECT kod_kala FROM kala
-       WHERE kod_kala LIKE ?
-       ORDER BY kod_kala DESC
-       LIMIT 1`,
-      [`${prefix}%`]
-    );
-
-    let nextCode;
-    if (!lastItem) {
-      nextCode = `${prefix}001`;
-    } else {
-      const numPart = parseInt(lastItem.kod_kala.substring(prefix.length), 10);
-      if (Number.isNaN(numPart)) {
-        // The highest existing code for this prefix is not numeric (e.g. a
-        // code with a letter suffix), so incrementing it is meaningless. Fall
-        // back to a count-based suggestion instead of emitting "prefixNaN".
-        const count = await db.get(
-          `SELECT COUNT(*) as c FROM kala WHERE kod_kala LIKE ?`,
-          [`${prefix}%`]
-        );
-        nextCode = `${prefix}${String(count.c + 1).padStart(3, '0')}`;
-      } else {
-        nextCode = `${prefix}${String(numPart + 1).padStart(3, '0')}`;
-      }
+    const prefix = itemCodePrefix(req.params.text);
+    if (!prefix) {
+      res.json({ prefix: '', last_code: null, suggested_code: '' });
+      return;
     }
-
-    res.json({ suggested_code: nextCode });
+    const [last_code, suggested_code] = await Promise.all([
+      lastItemCode(db, prefix),
+      suggestNextItemCode(db, prefix),
+    ]);
+    res.json({ prefix, last_code, suggested_code });
   } catch (error) {
     console.error('Error suggesting code:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Suggest next document number for a receipt or an issue.
+//
+// The convention is `{R|H}-{Jalali YYMMDD}-{seq}`; the head is fixed by the
+// document's date and only the sequence is something the user might change. The
+// endpoint therefore returns both the full number and the editable tail, and the
+// front-end shows the head as read-only context.
+app.get('/api/doc-numbers/suggest/:kind', requireDB, async (req, res) => {
+  try {
+    const kind = String(req.params.kind || '').toUpperCase();
+    const prefix = kind === 'ISSUE' || kind === ISSUE_PREFIX ? ISSUE_PREFIX : RECEIPT_PREFIX;
+    // A date the caller did not send is "today". A date it did send is
+    // canonicalised first: `1405/7/1` is a real day the user typed, and refusing
+    // it would leave the field empty when the head is derivable from it. A date
+    // that is not a real Jalali date still has to be refused, or the suggested
+    // number would encode a calendar the rest of the system cannot sort.
+    const tarikh = normalizeJalaliDate(req.query.tarikh) || todayJalali();
+    if (!isValidJalaliDate(tarikh)) {
+      return res.status(400).json({ error: 'تاریخ پیشنهاد باید شمسی و معتبر باشد' });
+    }
+
+    const seq = await suggestDocNumber(db, prefix, tarikh);
+    res.json({
+      prefix,
+      tarikh,
+      sequence: seq,
+      full_number: formatDocNumber(prefix, tarikh, seq),
+    });
+  } catch (error) {
+    console.error('Error suggesting document number:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Canonical group list in display order. Group ordering is stored data
+// (`sort_order`), not an alphabetic convention in the front-end, and this is the
+// only place a group list should come from.
+app.get('/api/groups', requireDB, async (req, res) => {
+  try {
+    const groups = await inventoryService.getGroups();
+    // Reference data is only ever *added*. A group whose items have all been
+    // retired is still a group the catalog used, so nothing is filtered out
+    // here; callers that only want to offer groups for new items can filter on
+    // is_active themselves.
+    res.json(groups);
+  } catch (error) {
+    console.error('Error fetching groups:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Unit precision: how many decimals each unit of measure may carry. The
+// front-end derives its quantity `step` from this so a unit's precision is
+// business metadata living in one place, enforced by the backend and rendered by
+// the front-end from the same rows.
+app.get('/api/unit-precision', requireDB, async (req, res) => {
+  try {
+    res.json(await inventoryService.getUnitPrecision());
+  } catch (error) {
+    console.error('Error fetching unit precision:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -452,6 +509,14 @@ app.post('/api/items', requireDB, async (req, res) => {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [kod_kala, naam_kala, goh || '', zirgoh || '', vahed || '', hadd_aqal_mojoodi || 0, tavazihat || '']
     );
+
+    // Register the group if it is new so it gets a sort_order. Ordering is stored
+    // data; a group that first appears here would otherwise have no row and fall
+    // to the end of the list — which is where a brand-new group belongs, but the
+    // row still has to exist for `is_active` and later reordering to work on it.
+    if (goh) await ensureGroup(db, goh);
+    // And the unit, so the precision table covers every unit in the catalog.
+    if (vahed) await ensureUnit(db, vahed);
 
     res.json({ id: result.lastID, kod_kala, message: 'Item created successfully' });
   } catch (error) {
@@ -706,6 +771,51 @@ app.get('/api/print/inventory', requireDB, async (req, res) => {
     }));
   } catch (error) {
     console.error('Error printing inventory:', error);
+    res.status(500).send('Error generating print view');
+  }
+});
+
+// Print movements report (ورود/خروج کالا)
+//
+// Same filters as the on-screen report, so the printed page is the same data the
+// user was looking at.
+app.get('/api/print/movements', requireDB, async (req, res) => {
+  try {
+    const from = req.query.from || null;
+    const to = req.query.to || null;
+    if (from && !isValidJalaliDate(from)) {
+      return res.status(400).send('تاریخ شروع باید شمسی و معتبر باشد');
+    }
+    if (to && !isValidJalaliDate(to)) {
+      return res.status(400).send('تاریخ پایان باید شمسی و معتبر باشد');
+    }
+
+    const movements = await inventoryService.getMovementsReport({
+      from,
+      to,
+      kala_id: req.query.kala_id || null,
+    });
+
+    // The item name comes back on each movement row; the print template needs the
+    // selected item's code and name for its header when the report is for one item.
+    let item = null;
+    if (req.query.kala_id) {
+      item = await db.get(`SELECT kod_kala, naam_kala FROM kala WHERE kod_kala = ?`, [
+        req.query.kala_id,
+      ]);
+    }
+
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(
+      movementsHtml(movements, {
+        from: from || '',
+        to: to || '',
+        item,
+        reportDate: todayJalali(),
+      })
+    );
+  } catch (error) {
+    console.error('Error printing movements:', error);
     res.status(500).send('Error generating print view');
   }
 });

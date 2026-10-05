@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { normalizeJalaliDate, isValidJalaliDate } from '../utils/jalali';
+import { todayJalali, normalizeJalaliDate, isValidJalaliDate } from '../utils/jalali';
+import JalaliDateField from './JalaliDateField';
 import './Reports.css';
 
 export default function Reports() {
@@ -16,28 +17,49 @@ export default function Reports() {
   const [cardexData, setCardexData] = useState(null);
   const [cardexLoading, setCardexLoading] = useState(false);
 
-  // Movements state
-  const [movFrom, setMovFrom] = useState('');
-  const [movTo, setMovTo] = useState('');
+  // Movements state. The range opens on today rather than empty: an empty pair
+  // of fields had to be filled by hand with eight digits and two slashes before
+  // anything could be seen, and the fields defaulted to matching nothing.
+  const [movFrom, setMovFrom] = useState(() => todayJalali());
+  const [movTo, setMovTo] = useState(() => todayJalali());
   const [movItem, setMovItem] = useState('');
   const [movData, setMovData] = useState(null);
   const [movLoading, setMovLoading] = useState(false);
 
-  // Receipts / issues report state
-  const [docFrom, setDocFrom] = useState('');
-  const [docTo, setDocTo] = useState('');
+  // Receipts / issues report state, opening on today for the same reason.
+  const [docFrom, setDocFrom] = useState(() => todayJalali());
+  const [docTo, setDocTo] = useState(() => todayJalali());
   const [receiptsData, setReceiptsData] = useState(null);
   const [issuesData, setIssuesData] = useState(null);
   const [docLoading, setDocLoading] = useState(false);
+
+  // Historical selectors list the whole catalog — a retired item still has a
+  // cardex and still appears in movements, so these dropdowns deliberately use
+  // ?include_inactive=1 rather than the active-only default list.
+  const [allItems, setAllItems] = useState([]);
 
   useEffect(() => {
     fetch('/api/items')
       .then(res => res.ok ? res.json() : [])
       .then(data => setItems(data))
       .catch(() => setItems([]));
+    fetch('/api/items?include_inactive=1')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setAllItems(data))
+      .catch(() => setAllItems([]));
+    // The canonical group list, in its stored display order.
+    fetch('/api/groups')
+      .then(res => res.ok ? res.json() : [])
+      .then(data => setGroups(data.map(g => g.name)))
+      .catch(() => setGroups([]));
   }, []);
 
-  const groups = ['all', ...new Set(items.map(item => item.goh).filter(Boolean))];
+  // Fall back to the groups present on the loaded items when the canonical table
+  // could not be read, so the filter never empties on a failed reference request.
+  const [groups, setGroups] = useState([]);
+  const groupOptions = groups.length > 0
+    ? groups
+    : [...new Set(items.map(item => item.goh).filter(Boolean))];
 
   const runInventoryReport = async () => {
     try {
@@ -168,8 +190,9 @@ export default function Reports() {
             <label>
               گروه کالا:
               <select value={invGroup} onChange={(e) => setInvGroup(e.target.value)}>
-                {groups.map(g => (
-                  <option key={g} value={g}>{g === 'all' ? 'همه گروه‌ها' : g}</option>
+                <option value="all">همه گروه‌ها</option>
+                {groupOptions.map(g => (
+                  <option key={g} value={g}>{g}</option>
                 ))}
               </select>
             </label>
@@ -239,9 +262,9 @@ export default function Reports() {
               کالا:
               <select value={cardexItem} onChange={(e) => setCardexItem(e.target.value)}>
                 <option value="">انتخاب کالا</option>
-                {items.map(item => (
+                {allItems.map(item => (
                   <option key={item.kod_kala} value={item.kod_kala}>
-                    {item.kod_kala} - {item.naam_kala}
+                    {item.kod_kala} - {item.naam_kala}{item.is_active === 0 ? ' (غیرفعال)' : ''}
                   </option>
                 ))}
               </select>
@@ -298,38 +321,38 @@ export default function Reports() {
           <div className="report-filters">
             <label>
               از تاریخ (شمسی):
-              <input
-                type="text"
-                value={movFrom}
-                onChange={(e) => setMovFrom(e.target.value)}
-                placeholder="YYYY/MM/DD"
-                inputMode="numeric"
-                dir="ltr"
-              />
+              <JalaliDateField value={movFrom} onChange={setMovFrom} id="mov-from" />
             </label>
             <label>
               تا تاریخ (شمسی):
-              <input
-                type="text"
-                value={movTo}
-                onChange={(e) => setMovTo(e.target.value)}
-                placeholder="YYYY/MM/DD"
-                inputMode="numeric"
-                dir="ltr"
-              />
+              <JalaliDateField value={movTo} onChange={setMovTo} id="mov-to" />
             </label>
             <label>
               کالا:
               <select value={movItem} onChange={(e) => setMovItem(e.target.value)}>
                 <option value="">همه کالاها</option>
-                {items.map(item => (
+                {allItems.map(item => (
                   <option key={item.kod_kala} value={item.kod_kala}>
-                    {item.kod_kala} - {item.naam_kala}
+                    {item.kod_kala} - {item.naam_kala}{item.is_active === 0 ? ' (غیرفعال)' : ''}
                   </option>
                 ))}
               </select>
             </label>
             <button className="btn-run" onClick={runMovements}>مشاهده حرکات</button>
+            {movData && movData.count > 0 && (
+              <button
+                className="btn-print-inline"
+                onClick={() => {
+                  const params = new URLSearchParams();
+                  if (movFrom) params.set('from', normalizeJalaliDate(movFrom));
+                  if (movTo) params.set('to', normalizeJalaliDate(movTo));
+                  if (movItem) params.set('kala_id', movItem);
+                  window.open(`/api/print/movements?${params.toString()}`, '_blank');
+                }}
+              >
+                🖨️ چاپ گزارش حرکات
+              </button>
+            )}
           </div>
 
           {movLoading && <div className="loading">در حال بارگذاری...</div>}
@@ -375,25 +398,11 @@ export default function Reports() {
           <div className="report-filters">
             <label>
               از تاریخ (شمسی):
-              <input
-                type="text"
-                value={docFrom}
-                onChange={(e) => setDocFrom(e.target.value)}
-                placeholder="YYYY/MM/DD"
-                inputMode="numeric"
-                dir="ltr"
-              />
+              <JalaliDateField value={docFrom} onChange={setDocFrom} id="doc-from" />
             </label>
             <label>
               تا تاریخ (شمسی):
-              <input
-                type="text"
-                value={docTo}
-                onChange={(e) => setDocTo(e.target.value)}
-                placeholder="YYYY/MM/DD"
-                inputMode="numeric"
-                dir="ltr"
-              />
+              <JalaliDateField value={docTo} onChange={setDocTo} id="doc-to" />
             </label>
             <button className="btn-run" onClick={runDocReports}>مشاهده اسناد</button>
           </div>

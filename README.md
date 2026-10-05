@@ -7,8 +7,9 @@ inventory tracking, multi-line receipt/issue documents, cardex, reports and prin
 ## 🎯 Project Status
 
 **Status:** ✅ Production Ready  
-**Version:** 2.0.0  
-**Last Updated:** 2026-09-24
+**Version:** 1.0.0 (as declared by `backend/package.json` and
+`frontend/package.json`)  
+**Last Updated:** 2026-10-02
 
 ### ✅ Completed Features
 
@@ -18,23 +19,53 @@ inventory tracking, multi-line receipt/issue documents, cardex, reports and prin
 - [x] Full item CRUD with code suggestion and activate/deactivate lifecycle
 - [x] Item cardex (کارتکس) with running balance
 - [x] Reports: inventory, receipts, issues, all-item movement ledger
-- [x] Printing / PDF for receipts, issue vouchers, cardex and inventory reports
-  (RTL print pages with header, totals and signature lines)
-- [x] Dashboard with live statistics and low-stock warnings
+- [x] Printing / PDF for receipts, issue vouchers, cardex, inventory and
+  movements reports (RTL print pages with header, totals and signature lines);
+  the print page opens as a preview and only prints on an explicit click
+- [x] Dashboard with live statistics, low-stock warnings and item search
 - [x] Persian RTL UI throughout
 - [x] Real data imported from Excel (28 items)
-- [x] Comprehensive automated test suite (30 tests) including inventory invariants
+- [x] Comprehensive automated test suite (80 unit tests + 64 API assertions, plus
+  16 front-end assertions over the document-line rules) including inventory
+  invariants
 - [x] API validation and error handling
 - [x] Insufficient inventory prevention (client- and server-side)
+- [x] Jalali calendar as the canonical business date, validated against real
+  month lengths at the API boundary
+- [x] Document numbers in one convention: `{R|H}-{Jalali YYMMDD}-{sequence}`,
+  with the next number suggested from the date. The head is derived from the
+  document's date and shown read-only, so only the sequence is typed; the API
+  also refuses a number whose embedded date is not the document's own date.
+  Historical numbers in older spellings are never rewritten
+- [x] Item-code suggestion follows the *numeric* sequence inside a prefix, so
+  `K9` no longer sorts above `K010` and a suggested code cannot collide with one
+  the catalog already has, at the width the catalog itself uses
+- [x] A document line is either valid or the whole document is invalid: nothing
+  half-entered is silently dropped, and every problem is reported on the row
+  it belongs to, with all entered values kept in place
+- [x] Item code, group and unit locked once an item exists; the unit a document
+  line stores comes from the Item Master, not the form
+- [x] Group ordering and unit precision held as database metadata, not
+  hard-coded in the front-end
 
 ## 📊 System Overview
 
 ### Item Categories
-1. کناف (Knauf) - Drywall materials
-2. رنگ و نقاشی - Paint and coating
-3. ابزار و ملزومات عمومی - General tools and supplies
-4. مصالح ساختمانی - Construction materials
-5. تجهیزات ایمنی - Safety equipment
+
+The four groups below are the ones the database actually holds, in the
+`sort_order` the API serves, with the active item count each one carries:
+
+| # | Group | Active items | English gloss |
+|---|-------|--------------|---------------|
+| 1 | کناف | 18 | Drywall materials |
+| 2 | ابزار و ملزومات  عمومی | 6 | General tools and supplies |
+| 3 | رنگ و نقاشی | 2 | Paint and coating |
+| 4 | مصالح ساختمانی | 2 | Construction materials |
+
+28 items in total. The names are reproduced exactly as they are stored —
+"ابزار و ملزومات  عمومی" carries two spaces in the database, and the catalog
+is matched against the stored spelling, so any other spelling is a different
+group. The order is metadata, not the front-end's own list order.
 
 ## 🏗 Architecture
 
@@ -156,12 +187,30 @@ Frontend will start on `http://localhost:5173`
 
 ### Run Automated Tests
 
+The suite has two parts. The unit tests run against throwaway databases they
+create themselves; the API suite spawns its own server on port 3999 against a
+temporary database. Neither one touches the live `data/warehouse.db`.
+
 ```bash
-# Backend must be running first (see above), then:
-node tests/api-test.js
+# Unit tests (migration safety, Jalali calendar, concurrency, Excel reader)
+cd backend && npm run test:unit
+
+# API suite — spawns its own isolated server, so no backend needs to be running
+cd backend && npm run test:api
+
+# Both, in one command
+cd backend && npm test
+
+# Front-end document-line rules (no runner configured; see the note below)
+cd frontend && node --import ./tests/extensionless-resolution.js --test ./tests/document-lines.test.js
 ```
 
-The test suite covers 30 assertions grouped as:
+The unit suite (`node --test`) covers 80 cases: migration safety on a legacy
+schema, Jalali month lengths and leap years, the document-number convention and
+unit-precision rules against a throwaway database, the item-code sequence, the
+concurrency duel, and the Excel seed reconciliation.
+
+The API suite covers 64 assertions grouped as:
 
 - Health check and dashboard statistics consistency
 - Items/inventory endpoints and the derived-inventory invariant
@@ -170,13 +219,32 @@ The test suite covers 30 assertions grouped as:
   hard delete vs. deactivate when history exists
 - Multi-line receipt and issue creation, verifying stock moves by the
   exact sum of the document's lines
+- Document-number convention (`{R|H}-{Jalali YYMMDD}-{seq}`) acceptance
+  and rejection of malformed numbers, the number's embedded date having to
+  match the document's own date, and the suggestion endpoint following the
+  date it is asked for (including a date the user did not zero-pad)
+- Item-code suggestion following the numeric sequence rather than the text
+  order, and continuing the catalog's own width
+- A document refused whole when any line is incomplete, with proof that
+  nothing was written and no stock moved
+- Canonical group list and per-unit precision served as database metadata
 - Insufficient-inventory rejection, with proof that stock is unchanged
 - Cardex: running balance is non-negative and ends at current stock
 - Document deletion restoring stock
-- Reports endpoints and printable HTML rendering
+- Reports endpoints and printable HTML rendering, including the requirement
+  that a print page is a preview and never prints on load
 - Automatic cleanup of every artifact it creates
 
-**Expected Output:** ✓ All tests passed! (30/30)
+The front-end suite covers the 16 assertions that pin the form rules the
+browser enforces: a line the user touched is never silently dropped, each
+problem is reported on the row it belongs to, and the head of a document
+number is fixed by the date while only the sequence is editable. Its modules
+are plain ESM with no browser dependencies, so Node's own runner executes
+them once the project's extensionless import style resolves — that is what
+the `--import` flag above registers, and the suite file is named explicitly
+because this Node version does not glob a directory argument.
+
+**Expected Output:** ✓ All tests passed! (64/64)
 
 ## 📡 API Documentation
 
@@ -189,6 +257,16 @@ http://localhost:3000/api
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/health` | Health check |
+
+#### Reference data
+Group ordering and unit precision are business metadata held in the database,
+served here so the front-end never hard-codes them.
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/groups` | Canonical group list in `sort_order` |
+| GET | `/unit-precision` | Per-unit decimal precision (`vahed`, `decimals`) |
+| GET | `/doc-numbers/suggest/:kind` | Next document number; `kind` = `receipt` or `issue`, `?tarikh=` defaults to today |
 
 #### Dashboard
 | Method | Endpoint | Description |
@@ -236,8 +314,10 @@ http://localhost:3000/api
 | GET | `/reports/movements` | All-item movement ledger (`?from=&to=&kala_id=`) |
 
 #### Printing (چاپ / PDF)
-Rendered as standalone RTL HTML pages that open the print dialog, which can be
-saved to PDF. They include the hotel header, document totals and signature lines.
+Rendered as standalone RTL HTML preview pages: they show the document first and
+print only on an explicit click, so a "print" link never fires the dialog on its
+own. Each page carries the hotel header, document totals and signature lines, and
+can be saved to PDF.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -245,6 +325,7 @@ saved to PDF. They include the hotel header, document totals and signature lines
 | GET | `/print/issue/:id` | Printable issue voucher |
 | GET | `/print/cardex/:kod_kala` | Printable item cardex |
 | GET | `/print/inventory` | Printable inventory report (`?group=`) |
+| GET | `/print/movements` | Printable movement ledger (`?from=&to=&kala_id=`, Jalali bounds) |
 
 ### API Examples
 
@@ -333,8 +414,10 @@ Response shape (chronological, with running balance):
 6. **Reports & Print (گزارشات و چاپ)**
    - Inventory report by category with totals and print
    - Item cardex with running balance and print
-   - All-item movement ledger with date and item filters
+   - All-item movement ledger with date and item filters, and print
    - Receipts and issues registers with date filters and per-document print
+   - Historical selectors list retired items too — a deactivated item still
+     has a cardex and still appears in the movement ledger
 
 ## 📁 Project Structure
 
@@ -347,26 +430,39 @@ Mehran-AI-Lab/
 │   │   ├── printTemplates.js          # RTL printable HTML documents
 │   │   ├── services/
 │   │   │   └── inventoryService.js     # Single source of truth for stock
+│   │   ├── utils/
+│   │   │   ├── jalali.js               # Jalali calendar validation
+│   │   │   ├── docNumber.js            # Document-number convention
+│   │   │   └── itemCode.js             # Item-code sequence (numeric order)
 │   │   └── scripts/
-│   │       └── fix-baseline-mapping.js # One-off baseline data repair
+│   │       └── migrate-legacy-schema.js # Explicit legacy-table conversion
+│   ├── tests/
+│   │   ├── concurrency.test.js        # Concurrent-issue duel against one DB
+│   │   ├── doc-number-and-precision.test.js # Number convention, precision, date agreement
+│   │   └── item-code.test.js           # Numeric item-code sequence
 │   └── data/
 │       └── real-warehouse-data.json   # Extracted Excel data
 ├── frontend/
-│   └── src/
-│       ├── App.jsx
-│       └── components/
-│           ├── Dashboard.jsx
-│           ├── Items.jsx
-│           ├── Inventory.jsx
-│           ├── Receipts.jsx
-│           ├── Issues.jsx
-│           ├── Reports.jsx
-│           └── ...
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── utils/
+│   │   │   ├── docNumber.js            # Client-side number/precision helpers
+│   │   │   └── documentLines.js        # Per-row line validation, both forms
+│   │   └── components/
+│   │       ├── Dashboard.jsx
+│   │       ├── Items.jsx
+│   │       ├── Inventory.jsx
+│   │       ├── Receipts.jsx
+│   │       ├── Issues.jsx
+│   │       ├── Reports.jsx
+│   │       └── ...
+│   └── tests/
+│       └── document-lines.test.js      # Front-end form rules (no-drop, number head)
 ├── data/
 │   └── warehouse.db                   # SQLite database (runtime)
-├── scripts/                           # Excel extraction and DB rebuild tools
+├── scripts/                           # Excel extraction and seed reconciliation tools
 ├── tests/
-│   └── api-test.js                    # Comprehensive test suite
+│   └── api-test.js                    # Comprehensive API test suite
 └── warehouse-source.xlsx              # Original Excel data source
 ```
 
@@ -391,13 +487,13 @@ Mehran-AI-Lab/
 ## 📈 Future Enhancements
 
 ### Suggested Features
-- [ ] Excel/PDF report generation
+- [ ] Excel export of the reports (printing and PDF export are already
+  implemented — see the `/print/*` endpoints above)
 - [ ] Advanced analytics and charts
 - [ ] User authentication system
 - [ ] Role-based permissions
 - [ ] Change history/audit log
 - [ ] Automatic backups
-- [ ] Receipt and issue printing
 - [ ] Barcode scanning
 - [ ] Mobile app
 - [ ] Email notifications for low stock
@@ -414,9 +510,23 @@ cp data/warehouse.backup-YYYYMMDD-HHMMSS.db data/warehouse.db
 ```
 
 ### Rebuild Database
+
+There is no rebuild script, deliberately. Deleting the database destroys real
+data, so the seed is applied only when a database is empty: `src/db.js` checks
+for an existing catalog before seeding and leaves a populated database exactly
+as it found it. To build a fresh database, move the old one aside first:
+
 ```bash
-# Complete database rebuild from Excel source
-node scripts/rebuild-warehouse-db.js
+mv data/warehouse.db data/warehouse.hand-moved.db
+cd backend && npm start   # creates data/warehouse.db and seeds it
+```
+
+To convert a database that still uses the legacy `vorood`/`khorooj` tables,
+use the explicit tool — it reports first and only writes with `--write`:
+
+```bash
+node backend/src/scripts/migrate-legacy-schema.js data/warehouse.db          # dry run
+node backend/src/scripts/migrate-legacy-schema.js data/warehouse.db --write  # convert
 ```
 
 ## 🐛 Troubleshooting
@@ -450,21 +560,13 @@ npm install
 ```bash
 # Check database file exists
 ls -la data/warehouse.db
-
-# Rebuild database from source
-node scripts/rebuild-warehouse-db.js
 ```
 
 ### Tests failing
 ```bash
-# Ensure both servers are running
-# Terminal 1
-cd backend && npm start
-
-# Terminal 2
-cd frontend && npm run dev
-
-# Terminal 3 - Run tests
+# The tests start their own isolated server and database, so nothing else has
+# to be running first.
+cd backend && npm test
 node tests/api-test.js
 ```
 
